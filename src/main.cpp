@@ -330,16 +330,12 @@ void setup()
 
 	//config.backgroundColor = doc["backgroundcolor"] | 0x120500;
 	clockdisplays[0].backgroundColor = doc["backgroundcolor0"] | 0x120500;
-
 	//config.hourMarkColor = doc["hourmarkcolor"] | 0x0F0F0F;
 	clockdisplays[0].hourMarkColor = doc["hourmarkcolor0"] | 0x120500;
-
 	//config.hourColor = doc["hourcolor"] | 0xFF0000;
 	clockdisplays[0].hourColor = doc["hourcolor0"] | 0xFF0000;
-
 	//config.minuteColor = doc["minutecolor"] | 0xFF0000;
 	clockdisplays[0].minuteColor = doc["minutecolor0"] | 0xFF0000;
-
 	//config.secondColor = doc["secondcolor"] | 0xFF0000;
 	clockdisplays[0].secondColor = doc["secondcolor0"] | 0xFF0000;
 
