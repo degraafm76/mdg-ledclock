@@ -3,7 +3,7 @@
 
 <head>
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-title" content="MDG Ledr clock">
+    <meta name="apple-mobile-web-app-title" content="MDG Ledclock-121">
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <!--CSS and JS are composed files containing Onsen ui 2.11.1 and iro.js v5 -->
     <link rel="stylesheet" href="/mdg-ledr.css">
@@ -18,7 +18,7 @@
         <ons-tabbar position="auto">
             <ons-tab page="tab1.html" label="Look & Feel" icon="md-palette" active>
             </ons-tab>
-            <ons-tab page="tab2.html" label="Settings" icon="md-gear">
+            <ons-tab page="tab2.html" label="Settings" icon="md-settings">
             </ons-tab>
         </ons-tabbar>
     </ons-page>
@@ -26,14 +26,14 @@
         <ons-page id="Tab1">
             <ons-card>
                 <div style="text-align: center;" class="title">
-                    Brightness
+                    Brightness (LDR: %LDRValue%)
                 </div>
                 <ons-row style="margin-top: 20px;">
                     <ons-col width="40px" style="text-align: center; line-height: 31px;">
                         <ons-icon icon="md-brightness-low"></ons-icon>
                     </ons-col>
                     <ons-col>
-                        <ons-range id="brightness" style="width: 100%;" min="0" max="255" value="50"></ons-range>
+                        <ons-range id="brightness" style="width: 100%%;" min="0" max="255" value="%sliderBrightnessValue%"></ons-range>
                     </ons-col>
                     <ons-col width="40px" style="text-align: center; line-height: 31px;">
                         <ons-icon icon="md-brightness-high"></ons-icon>
@@ -60,8 +60,6 @@
                 <div style="text-align: center;" class="title">
                     Hour hand Color
                 </div>
-                <div id="hourColorPicker"></div>
-                </div>
                 <div class="content">
                     <div id="hourColorPicker"></div>
                 </div>
@@ -69,8 +67,6 @@
             <ons-card>
                 <div style="text-align: center;" class="title">
                     Minute hand Color
-                </div>
-                <div id="minuteColorPicker"></div>
                 </div>
                 <div class="content">
                     <div id="minuteColorPicker"></div>
@@ -80,8 +76,6 @@
                 <div style="text-align: center;" class="title">
                     Second hand Color
                 </div>
-                <div id="secondColorPicker"></div>
-                </div>
                 <div class="content">
                     <div id="secondColorPicker"></div>
                 </div>
@@ -90,14 +84,52 @@
                 <ons-list-header>Settings</ons-list-header>
                 <ons-list-item>
                     <div class="center">
-                        show ms pointer
+                        Show milliseconds:
                     </div>
                     <div class="right">
                         <ons-switch id="showms" %showms%></ons-switch>
                     </div>
                 </ons-list-item>
-            </ons-list>
-            <p style="margin-top: 30px;">
+                <ons-list-item>
+                    <div class="center">
+                        Show seconds:
+                    </div>
+                    <div class="right">
+                        <ons-switch id="showseconds" %showseconds%></ons-switch>
+                    </div>
+                </ons-list-item>
+                <ons-list-item>
+                    <div class="center">
+                        Auto brightness:
+                    </div>
+                    <div class="right">
+                        <ons-switch id="autobrightness" %autobrightness%></ons-switch>
+                    </div>
+                </ons-list-item>
+                
+               
+               <ons-list-item>
+                <div class="center">
+                    Active clock display:
+                </div>
+                <div class="right">                 
+                        
+                            <select name="activeclockdisplay" id="activeclockdisplay">
+                                <option value="0">1</option>
+                                <option value="1">2</option>
+                                <option value="2">3</option>
+                                <option value="3">4</option>
+                                <option value="4">5</option>                                                           
+                            </select>                      
+                </div>               
+            </ons-list-item>
+        </ons-list>
+         
+  
+               
+
+ 
+            <p style="margin-top: 30px;text-align: right;">
                 <ons-button onclick="save_lf()">Save</ons-button>
             </p>
         </ons-page>
@@ -111,19 +143,32 @@
                 <div class="content">
                     <div style="text-align: center; margin-top: 30px;">
                         <p>
-                            <ons-input id="ssid" modifier="material" placeholder="ssid" value="%ssid%"></ons-input>
+                            <ons-input id="ssid" modifier="material" placeholder="SSID" value="%ssid%"></ons-input>
                         </p>
                         <p>
                             <ons-input id="wifipassword" modifier="material" type="password" placeholder="WiFi password"
                                 value="%wifipassword%"></ons-input>
                         </p>
-
                     </div>
                 </div>
             </ons-card>
             <ons-card>
                 <div style="text-align: center;" class="title">
-                    Configured timezone: %tz%
+                    Host-name
+                </div>
+                <div class="content">
+                    <div style="text-align: center; margin-top: 30px;">
+                        <p>
+                            <ons-input id="hostname" modifier="material" placeholder="hostname" maxlength="16"
+                                value="%hostname%"></ons-input>
+                        </p>
+                    </div>
+                </div>
+
+            </ons-card>
+            <ons-card>
+                <div style="text-align: center;" class="title">
+                    Timezone:
                 </div>
                 <div class="content">
                     <div style="text-align: center; margin-top: 30px;">
@@ -596,26 +641,44 @@
                 </div>
             </ons-card>
             <p style="margin-top: 30px; text-align: right;">
-                <ons-button onclick="save_settings()">Save</ons-button>
+                <ons-button onclick="save_settings()">Save & reboot</ons-button>
             </p>
-
-
-
-
         </ons-page>
     </template>
 </body>
 
 </html>
 <script>
+
+    var backgroundColorPicker;
+    var hourMarkColorPicker;
+    var hourColorPicker;
+    var minuteColorPicker;
+    var secondColorPicker;
+
+
     document.addEventListener('prechange', function (event) {
         document.querySelector('ons-toolbar .center')
             .innerHTML = event.tabItem.getAttribute('label');
     });
 
+    function set_theme(themeindex) {
 
 
+        var themes = [
+            ["00000", "00000", "ff6200", "ff6200", "ff6200"],
+            ["06103d", "5c5c5c", "ff1e00", "ff1e00", "ff1e00"],
+            ["002622", "b81f00", "ffe3e9", "ffe3e9", "ffe3e9"]
+            
 
+        ];
+
+        backgroundColorPicker.color.hexString = themes[themeindex][0];
+        hourMarkColorPicker.color.hexString = themes[themeindex][1];
+        hourColorPicker.color.hexString = themes[themeindex][2];
+        minuteColorPicker.color.hexString = themes[themeindex][3];
+        secondColorPicker.color.hexString = themes[themeindex][4];
+    }
 
     function save_lf() {
         var xhr = new XMLHttpRequest();
@@ -623,17 +686,26 @@
         xhr.send();
     }
 
+
     function save_settings() {
         var ssid = encodeURIComponent(document.getElementById('ssid').value);
         var wifipassword = encodeURIComponent(document.getElementById('wifipassword').value);
         var tz = encodeURIComponent(document.getElementById('tz').value);
+        var hostname = encodeURIComponent(document.getElementById('hostname').value);
+        var urlparams = '';
+
+        if (hostname != 'ledclock') {
+            urlparams = "&hostname=" + hostname;
+        }
+        if (tz != '') {
+            urlparams += "&tz=" + tz;
+        }
 
         var xhr = new XMLHttpRequest();
-        if (tz != '') {
-            xhr.open("GET", "/configuration?ssid=" + ssid + "&wifipassword=" + wifipassword + "&tz=" + tz, false);
-            xhr.send();
-        } else {
-            xhr.open("GET", "/configuration?ssid=" + ssid + "&wifipassword=" + wifipassword, false);
+        if (ssid != '' && wifipassword != '') {
+
+            xhr.open("GET", "/configuration?ssid=" + ssid + "&wifipassword=" + wifipassword + urlparams, false);
+
             xhr.send();
         }
 
@@ -647,11 +719,28 @@
     }
 
     ons.ready(function () {
+        document.addEventListener('init', function (event) {
+            if (document.getElementById("autobrightness").checked == true) {
+                document.getElementById('brightness').disabled = true;
+            }
 
-        //      document.getElementById('tz').value = '%tz%';
+            document.getElementById("tz").value = '%tz%';
+            document.getElementById("activeclockdisplay").value = '%activeclockdisplay%';
+
+        }, false);
+
+        document.getElementById("activeclockdisplay").addEventListener('change', function () {
+            var activeclockdisplay = encodeURIComponent(document.getElementById('activeclockdisplay').value);
+
+            var xhr = new XMLHttpRequest();
+                xhr.open("GET", "/configuration?activeclockdisplay="+activeclockdisplay, true);
+                xhr.send();
+                location.reload();
+            });
+
+        
 
         document.getElementById("showms").addEventListener('change', function () {
-            console.log(document.getElementById("showms").checked);
 
             if (document.getElementById("showms").checked == true) {
                 var xhr = new XMLHttpRequest();
@@ -664,6 +753,34 @@
             }
         });
 
+        document.getElementById("showseconds").addEventListener('change', function () {
+
+            if (document.getElementById("showseconds").checked == true) {
+                var xhr = new XMLHttpRequest();
+                xhr.open("GET", "/configuration?showseconds=1", true);
+                xhr.send();
+            } else {
+                var xhr = new XMLHttpRequest();
+                xhr.open("GET", "/configuration?showseconds=0", true);
+                xhr.send();
+            }
+        });
+
+        document.getElementById("autobrightness").addEventListener('change', function () {
+
+            if (document.getElementById("autobrightness").checked == true) {
+                var xhr = new XMLHttpRequest();
+                xhr.open("GET", "/configuration?autobrightness=1", true);
+                xhr.send();
+                document.getElementById('brightness').disabled = true;
+            } else {
+                var xhr = new XMLHttpRequest();
+                xhr.open("GET", "/configuration?autobrightness=0", true);
+                xhr.send();
+                document.getElementById('brightness').disabled = false;
+            }
+        });
+
         document.getElementById("brightness").addEventListener('input', function () {
             console.log(document.getElementById("brightness").value);
             var xhr = new XMLHttpRequest();
@@ -671,18 +788,20 @@
             xhr.send();
         });
 
-        var backgroundColorPicker = new iro.ColorPicker('#backgroundColorPicker', {
+        backgroundColorPicker = new iro.ColorPicker('#backgroundColorPicker', {
             width: 200,
             wheelLightness: false,
             color: '%backGroundColor%',
+            align: 'center',
         });
         backgroundColorPicker.on('color:change', function (color) {
             var hex = (color.hexString.substring(1)); //strip # hash from hex code
+            console.log(color.value);
             var xhr = new XMLHttpRequest();
             xhr.open("GET", "/color?backgroundcolor=" + hex, true);
             xhr.send();
         });
-        var hourMarkColorPicker = new iro.ColorPicker('#hourMarkColorPicker', {
+        hourMarkColorPicker = new iro.ColorPicker('#hourMarkColorPicker', {
             width: 200,
             wheelLightness: false,
             color: '%hourMarkColor%',
@@ -693,7 +812,7 @@
             xhr.open("GET", "/color?hourmarkcolor=" + hex, true);
             xhr.send();
         });
-        var hourColorPicker = new iro.ColorPicker('#hourColorPicker', {
+        hourColorPicker = new iro.ColorPicker('#hourColorPicker', {
             width: 200,
             wheelLightness: false,
             color: '%hourColor%',
@@ -704,7 +823,7 @@
             xhr.open("GET", "/color?hourcolor=" + hex, true);
             xhr.send();
         });
-        var minuteColorPicker = new iro.ColorPicker('#minuteColorPicker', {
+        minuteColorPicker = new iro.ColorPicker('#minuteColorPicker', {
             width: 200,
             wheelLightness: false,
             color: '%minuteColor%',
@@ -715,7 +834,7 @@
             xhr.open("GET", "/color?minutecolor=" + hex, true);
             xhr.send();
         });
-        var secondColorPicker = new iro.ColorPicker('#secondColorPicker', {
+        secondColorPicker = new iro.ColorPicker('#secondColorPicker', {
             width: 200,
             wheelLightness: false,
             color: '%secondColor%',
@@ -726,7 +845,5 @@
             xhr.open("GET", "/color?secondcolor=" + hex, true);
             xhr.send();
         });
-
-
     });
 </script>

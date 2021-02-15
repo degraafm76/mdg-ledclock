@@ -21,10 +21,6 @@
 #define ROTATE_LEDS 30
 #define MaxBrightness 255
 #define MinBrightness 15
-// For led chips like WS2812, which have a data line, ground, and power, you just
-// need to define DATA_PIN.  For led chipsets that are SPI based (four wires - data, clock,
-// ground, and power), like the LPD8806 define both DATA_PIN and CLOCK_PIN
-// Clock pin only needed for SPI based chipsets when not using hardware SPI
 #define DATA_PIN 3
 
 #define LIGHTSENSORPIN A0 //Ambient light sensor reading
@@ -35,6 +31,8 @@ unsigned long currentMillis;
 
 float lightReading;
 
+#define CLOCK_DISPLAYS 5
+
 // Config
 String jsonConfigfile;
 
@@ -42,9 +40,10 @@ struct Config
 {
 
 	int showms;
+	int activeclockdisplay;
 	int showseconds;
-	int autobrightness;
-	int rainbowgb;
+	//int autobrightness;
+	//int rainbowgb;
 	char tz[64];
 	char ssid[33];
 	char wifipassword[65];
@@ -60,33 +59,11 @@ typedef struct Clockdisplay
 	int hourMarkColor;
 	int showms;
 	int showseconds;
+	int autobrightness;
+	int rainbowgb;
 } clockdisplay;
 
-clockdisplay clockdisplays[4]; //create an array of 5 clock displays
-
-/* // Begin
-#include
-
-typedef struct {
-int minimum;
-int maximum;
-int start;
-int pin;
-Servo device;
-} DOF;
-
-DOF dsof[3];
-
-void setup() {
-dsof[0] = {45, 180, 90, 2};
-dsof[1] = {0, 180, 0, 3};
-dsof[2] = {0, 180, 0, 4};
-
-for (int i = 0; i < 3; i ++) {
-dsof[i].device.attach(dsof[i].pin);
-}
-}
-// End */
+clockdisplay clockdisplays[CLOCK_DISPLAYS]; //create an array of 5 clock displays
 
 Config config; // <- global configuration object
 
@@ -117,45 +94,49 @@ String processor(const String &var)
 	if (var == "backGroundColor")
 	{
 
-		return String(inttoHex(clockdisplays[0].backgroundColor, 6));
+		return String(inttoHex(clockdisplays[config.activeclockdisplay].backgroundColor, 6));
 	}
 	if (var == "hourMarkColor")
 	{
-		return String(inttoHex(clockdisplays[0].hourMarkColor, 6));
+		return String(inttoHex(clockdisplays[config.activeclockdisplay].hourMarkColor, 6));
 	}
 	if (var == "hourColor")
 	{
-		return String(inttoHex(clockdisplays[0].hourColor, 6));
+		return String(inttoHex(clockdisplays[config.activeclockdisplay].hourColor, 6));
 	}
 	if (var == "minuteColor")
 	{
-		return String(inttoHex(clockdisplays[0].minuteColor, 6));
+		return String(inttoHex(clockdisplays[config.activeclockdisplay].minuteColor, 6));
 	}
 	if (var == "secondColor")
 	{
-		//return String(inttoHex(config.secondColor, 6));
-		return String(inttoHex(clockdisplays[0].secondColor, 6));
+
+		return String(inttoHex(clockdisplays[config.activeclockdisplay].secondColor, 6));
 	}
 	if (var == "showms")
 	{
-		if (config.showms != 0)
+		if (clockdisplays[config.activeclockdisplay].showms != 0)
 		{
 			return String("checked");
 		}
 	}
 	if (var == "showseconds")
 	{
-		if (config.showseconds != 0)
+		if (clockdisplays[config.activeclockdisplay].showseconds != 0)
 		{
 			return String("checked");
 		}
 	}
 	if (var == "autobrightness")
 	{
-		if (config.autobrightness != 0)
+		if (clockdisplays[config.activeclockdisplay].autobrightness != 0)
 		{
 			return String("checked");
 		}
+	}
+	if (var == "activeclockdisplay")
+	{
+		return String(config.activeclockdisplay);
 	}
 	if (var == "ssid")
 	{
@@ -194,7 +175,7 @@ void saveConfiguration(const char *filename, const Config &config)
 	// Allocate a temporary JsonDocument
 	// Don't forget to change the capacity to match your requirements.
 	// Use arduinojson.org/assistant to compute the capacity.
-	StaticJsonDocument<1024> doc;
+	StaticJsonDocument<2048> doc;
 
 	// Set the values in the document
 
@@ -203,30 +184,47 @@ void saveConfiguration(const char *filename, const Config &config)
 	doc["hourcolor0"] = clockdisplays[0].hourColor;
 	doc["minutecolor0"] = clockdisplays[0].minuteColor;
 	doc["secondcolor0"] = clockdisplays[0].secondColor;
-	/* doc["backgroundcolor1"] = clockdisplays[1].backgroundColor;
+	doc["showms0"] = clockdisplays[0].showms;
+	doc["showseconds0"] = clockdisplays[0].showseconds;
+	doc["autobrightness0"] = clockdisplays[0].autobrightness;
+	doc["rainbowbg0"] = clockdisplays[0].rainbowgb;
+	doc["backgroundcolor1"] = clockdisplays[1].backgroundColor;
 	doc["hourmarkcolor1"] = clockdisplays[1].hourMarkColor;
 	doc["hourcolor1"] = clockdisplays[1].hourColor;
 	doc["minutecolor1"] = clockdisplays[1].minuteColor;
 	doc["secondcolor1"] = clockdisplays[1].secondColor;
+	doc["showms1"] = clockdisplays[1].showms;
+	doc["showseconds1"] = clockdisplays[1].showseconds;
+	doc["autobrightness1"] = clockdisplays[1].autobrightness;
+	doc["rainbowbg1"] = clockdisplays[1].rainbowgb;
 	doc["backgroundcolor2"] = clockdisplays[2].backgroundColor;
 	doc["hourmarkcolor2"] = clockdisplays[2].hourMarkColor;
 	doc["hourcolor2"] = clockdisplays[2].hourColor;
 	doc["minutecolor2"] = clockdisplays[2].minuteColor;
 	doc["secondcolor2"] = clockdisplays[2].secondColor;
+	doc["showms2"] = clockdisplays[2].showms;
+	doc["showseconds2"] = clockdisplays[2].showseconds;
+	doc["autobrightness2"] = clockdisplays[2].autobrightness;
+	doc["rainbowbg2"] = clockdisplays[2].rainbowgb;
 	doc["backgroundcolor3"] = clockdisplays[3].backgroundColor;
 	doc["hourmarkcolor3"] = clockdisplays[3].hourMarkColor;
 	doc["hourcolor3"] = clockdisplays[3].hourColor;
 	doc["minutecolor3"] = clockdisplays[3].minuteColor;
 	doc["secondcolor3"] = clockdisplays[3].secondColor;
+	doc["showms3"] = clockdisplays[3].showms;
+	doc["showseconds3"] = clockdisplays[3].showseconds;
+	doc["autobrightness3"] = clockdisplays[3].autobrightness;
+	doc["rainbowbg3"] = clockdisplays[3].rainbowgb;
 	doc["backgroundcolor4"] = clockdisplays[4].backgroundColor;
 	doc["hourmarkcolor4"] = clockdisplays[4].hourMarkColor;
 	doc["hourcolor4"] = clockdisplays[4].hourColor;
 	doc["minutecolor4"] = clockdisplays[4].minuteColor;
-	doc["secondcolor4"] = clockdisplays[4].secondColor; */
-	doc["showms"] = config.showms;
-	doc["showseconds"] = config.showseconds;
-	doc["autobrightness"] = config.autobrightness;
-	doc["rainbowbg"] = config.rainbowgb;
+	doc["secondcolor4"] = clockdisplays[4].secondColor;
+	doc["showms4"] = clockdisplays[4].showms;
+	doc["showseconds4"] = clockdisplays[4].showseconds;
+	doc["autobrightness4"] = clockdisplays[4].autobrightness;
+	doc["rainbowbg4"] = clockdisplays[4].rainbowgb;
+	doc["activeclockdisplay"] = config.activeclockdisplay;
 	doc["tz"] = config.tz;
 	doc["ssid"] = config.ssid;
 	doc["wifipassword"] = config.wifipassword;
@@ -317,7 +315,7 @@ void setup()
 	// Allocate a temporary JsonDocument
 	// Don't forget to change the capacity to match your requirements.
 	// Use arduinojson.org/assistant to compute the capacity.
-	StaticJsonDocument<512> doc;
+	StaticJsonDocument<2048> doc;
 
 	jsonConfigfile = (configfile.readString());
 
@@ -328,30 +326,67 @@ void setup()
 
 	configfile.close(); //close file
 
-	//config.backgroundColor = doc["backgroundcolor"] | 0x120500;
-	clockdisplays[0].backgroundColor = doc["backgroundcolor0"] | 0x120500;
-	//config.hourMarkColor = doc["hourmarkcolor"] | 0x0F0F0F;
-	clockdisplays[0].hourMarkColor = doc["hourmarkcolor0"] | 0x120500;
-	//config.hourColor = doc["hourcolor"] | 0xFF0000;
-	clockdisplays[0].hourColor = doc["hourcolor0"] | 0xFF0000;
-	//config.minuteColor = doc["minutecolor"] | 0xFF0000;
-	clockdisplays[0].minuteColor = doc["minutecolor0"] | 0xFF0000;
-	//config.secondColor = doc["secondcolor"] | 0xFF0000;
-	clockdisplays[0].secondColor = doc["secondcolor0"] | 0xFF0000;
+	clockdisplays[0].backgroundColor = doc["backgroundcolor0"] | 0x002622;
+	clockdisplays[0].hourMarkColor = doc["hourmarkcolor0"] | 0xb81f00;
+	clockdisplays[0].hourColor = doc["hourcolor0"] | 0xffe3e9;
+	clockdisplays[0].minuteColor = doc["minutecolor0"] | 0xffe3e9;
+	clockdisplays[0].secondColor = doc["secondcolor0"] | 0xffe3e9;
+	clockdisplays[0].showms = doc["showms0"] | 0;
+	clockdisplays[0].showseconds = doc["showseconds0"] | 1;
+	clockdisplays[0].autobrightness = doc["autobrightness0"] | 1;
+	clockdisplays[0].rainbowgb = doc["rainbowbg0"] | 0;
 
-	config.showms = doc["showms"] | 0;
-	config.showseconds = doc["showseconds"] | 1;
-	config.autobrightness = doc["autobrightness"] | 1;
-	config.rainbowgb = doc["rainbowbg"] | 0;
+	clockdisplays[1].backgroundColor = doc["backgroundcolor1"] | 0x002622;
+	clockdisplays[1].hourMarkColor = doc["hourmarkcolor1"] | 0xb81f00;
+	clockdisplays[1].hourColor = doc["hourcolor1"] | 0xffe3e9;
+	clockdisplays[1].minuteColor = doc["minutecolor1"] | 0xffe3e9;
+	clockdisplays[1].secondColor = doc["secondcolor1"] | 0xffe3e9;
+	clockdisplays[1].showms = doc["showms1"] | 0;
+	clockdisplays[1].showseconds = doc["showseconds1"] | 1;
+	clockdisplays[1].autobrightness = doc["autobrightness1"] | 1;
+	clockdisplays[1].rainbowgb = doc["rainbowbg1"] | 0;
+
+	clockdisplays[2].backgroundColor = doc["backgroundcolor2"] | 0x002622;
+	clockdisplays[2].hourMarkColor = doc["hourmarkcolor2"] | 0xb81f00;
+	clockdisplays[2].hourColor = doc["hourcolor2"] | 0xffe3e9;
+	clockdisplays[2].minuteColor = doc["minutecolor2"] | 0xffe3e9;
+	clockdisplays[2].secondColor = doc["secondcolor2"] | 0xffe3e9;
+	clockdisplays[2].showms = doc["showms2"] | 0;
+	clockdisplays[2].showseconds = doc["showseconds2"] | 1;
+	clockdisplays[2].autobrightness = doc["autobrightness2"] | 1;
+	clockdisplays[2].rainbowgb = doc["rainbowbg2"] | 0;
+
+	clockdisplays[3].backgroundColor = doc["backgroundcolor3"] | 0x002622;
+	clockdisplays[3].hourMarkColor = doc["hourmarkcolor3"] | 0xb81f00;
+	clockdisplays[3].hourColor = doc["hourcolor3"] | 0xffe3e9;
+	clockdisplays[3].minuteColor = doc["minutecolor3"] | 0xffe3e9;
+	clockdisplays[3].secondColor = doc["secondcolor3"] | 0xffe3e9;
+	clockdisplays[3].showms = doc["showms3"] | 0;
+	clockdisplays[3].showseconds = doc["showseconds3"] | 1;
+	clockdisplays[3].autobrightness = doc["autobrightness3"] | 1;
+	clockdisplays[3].rainbowgb = doc["rainbowbg3"] | 0;
+
+	clockdisplays[4].backgroundColor = doc["backgroundcolor4"] | 0x002622;
+	clockdisplays[4].hourMarkColor = doc["hourmarkcolor4"] | 0xb81f00;
+	clockdisplays[4].hourColor = doc["hourcolor4"] | 0xffe3e9;
+	clockdisplays[4].minuteColor = doc["minutecolor4"] | 0xffe3e9;
+	clockdisplays[4].secondColor = doc["secondcolor4"] | 0xffe3e9;
+	clockdisplays[4].showms = doc["showms4"] | 0;
+	clockdisplays[4].showseconds = doc["showseconds4"] | 1;
+	clockdisplays[4].autobrightness = doc["autobrightness4"] | 1;
+	clockdisplays[4].rainbowgb = doc["rainbowbg4"] | 0;
+
+	config.activeclockdisplay = doc["activeclockdisplay"] | 0;
+
 	strlcpy(config.tz, doc["tz"] | "UTC", sizeof(config.tz));
 	strlcpy(config.ssid, doc["ssid"] | "", sizeof(config.ssid));
 	strlcpy(config.wifipassword, doc["wifipassword"] | "", sizeof(config.wifipassword));
 	strlcpy(config.hostname, doc["hostname"] | "ledclock", sizeof(config.hostname));
 
 	Serial.println("<<<<<< Clock configuration >>>>>>>");
-	Serial.println("Background HEX color: " + inttoHex(clockdisplays[0].backgroundColor, 6));
-	Serial.println("Hour mark HEX color: " + inttoHex(clockdisplays[0].hourMarkColor, 6));
-	Serial.println("Show ms led: " + String(config.showms));
+	Serial.println("Background HEX color: " + inttoHex(clockdisplays[config.activeclockdisplay].backgroundColor, 6));
+	Serial.println("Hour mark HEX color: " + inttoHex(clockdisplays[config.activeclockdisplay].hourMarkColor, 6));
+	Serial.println("Show ms led: " + String(clockdisplays[config.activeclockdisplay].showms));
 	Serial.println("Timezone: " + String(config.tz));
 	Serial.println("ssid: " + String(config.ssid));
 	//Serial.println("wifipassword: xxxxxxx"); // + String(config.wifipassword));
@@ -369,7 +404,7 @@ void setup()
 
 	WiFi.mode(WIFI_STA);
 
-	WiFi.hostname("ledclock");
+	WiFi.hostname(config.hostname);
 	WiFi.begin(config.ssid, config.wifipassword);
 
 	// Uncomment the line below to see what it does behind the scenes
@@ -441,32 +476,32 @@ void setup()
 			inputMessage = request->getParam("hourcolor")->value();
 
 			//config.hourColor = hstol(inputMessage);
-			clockdisplays[0].hourColor = hstol(inputMessage);
+			clockdisplays[config.activeclockdisplay].hourColor = hstol(inputMessage);
 		}
 		else if (request->hasParam("minutecolor"))
 		{
 			inputMessage = request->getParam("minutecolor")->value();
 
 			//config.minuteColor = hstol(inputMessage);
-			clockdisplays[0].minuteColor = hstol(inputMessage);
+			clockdisplays[config.activeclockdisplay].minuteColor = hstol(inputMessage);
 		}
 		else if (request->hasParam("secondcolor"))
 		{
 			inputMessage = request->getParam("secondcolor")->value();
 			//config.secondColor = hstol(inputMessage);
-			clockdisplays[0].secondColor = hstol(inputMessage);
+			clockdisplays[config.activeclockdisplay].secondColor = hstol(inputMessage);
 		}
 		else if (request->hasParam("backgroundcolor"))
 		{
 			inputMessage = request->getParam("backgroundcolor")->value();
 			//config.backgroundColor = hstol(inputMessage);
-			clockdisplays[0].backgroundColor = hstol(inputMessage);
+			clockdisplays[config.activeclockdisplay].backgroundColor = hstol(inputMessage);
 		}
 		else if (request->hasParam("hourmarkcolor"))
 		{
 			inputMessage = request->getParam("hourmarkcolor")->value();
 			//config.hourMarkColor = hstol(inputMessage);
-			clockdisplays[0].hourMarkColor = hstol(inputMessage);
+			clockdisplays[config.activeclockdisplay].hourMarkColor = hstol(inputMessage);
 		}
 		else
 		{
@@ -493,7 +528,7 @@ void setup()
 			if (p->name() == "brightness")
 			{
 				//Serial.println("brightness");
-				if (config.autobrightness == 0)
+				if (clockdisplays[config.activeclockdisplay].autobrightness == 0)
 				{
 					int NumtToBrightness = map(p->value().toInt(), 0, 255, MinBrightness, MaxBrightness);
 					FastLED.setBrightness(NumtToBrightness);
@@ -501,19 +536,23 @@ void setup()
 			}
 			else if (p->name() == "showms")
 			{
-				config.showms = p->value().toInt();
+				clockdisplays[config.activeclockdisplay].showms = p->value().toInt();
+			}
+			else if (p->name() == "activeclockdisplay")
+			{
+				config.activeclockdisplay = p->value().toInt();
 			}
 			else if (p->name() == "showseconds")
 			{
-				config.showseconds = p->value().toInt();
+				clockdisplays[config.activeclockdisplay].showseconds = p->value().toInt();
 			}
 			else if (p->name() == "autobrightness")
 			{
-				config.autobrightness = p->value().toInt();
+				clockdisplays[config.activeclockdisplay].autobrightness = p->value().toInt();
 			}
 			else if (p->name() == "rainbowbg")
 			{
-				config.rainbowgb = p->value().toInt();
+				clockdisplays[config.activeclockdisplay].rainbowgb = p->value().toInt();
 			}
 			else if (p->name() == "ssid")
 			{
@@ -560,10 +599,10 @@ void loop()
 	for (int Led = 0; Led < 60; Led = Led + 1)
 	{
 
-		leds[Led] = clockdisplays[0].backgroundColor;
+		leds[Led] = clockdisplays[config.activeclockdisplay].backgroundColor;
 	}
 
-	if (config.rainbowgb == 1) //show rainbow background
+	if (clockdisplays[config.activeclockdisplay].rainbowgb == 1) //show rainbow background
 	{
 		fill_rainbow(leds, NUM_LEDS, 5, 8);
 	}
@@ -571,47 +610,47 @@ void loop()
 	for (int Led = 0; Led <= 55; Led = Led + 5)
 	{
 
-		leds[rotate(Led)] = clockdisplays[0].hourMarkColor;
+		leds[rotate(Led)] = clockdisplays[config.activeclockdisplay].hourMarkColor;
 		//leds[rotate(Led)].fadeToBlackBy(230);
 	}
 
 	int houroffset = map(tz.minute(), 0, 60, 0, 5); //move the hour hand when the minutes pass
 
 	uint8_t hrs12 = (tz.hour() % 12);
-	leds[rotate((hrs12 * 5) + houroffset)] = clockdisplays[0].hourColor;
+	leds[rotate((hrs12 * 5) + houroffset)] = clockdisplays[config.activeclockdisplay].hourColor;
 	//leds[rotate((hrs12 * 5) + houroffset) + 1 ] = CRGB::DarkRed;
 	//leds[rotate((hrs12 * 5) + houroffset )- 1 ] = CRGB::DarkRed;
 
 	//Minute hand
-	leds[rotate(tz.minute())] = clockdisplays[0].minuteColor;
+	leds[rotate(tz.minute())] = clockdisplays[config.activeclockdisplay].minuteColor;
 
 	//Second hand
-	if (config.showseconds == 1)
+	if (clockdisplays[config.activeclockdisplay].showseconds == 1)
 	{
 
-		/* int msto255 = map(tz.ms(), 1, 1000, 0, 255);
-		CRGB pixelColor1 = blend( config.secondColor, leds[rotate(tz.second()-1)] , msto255);
-		CRGB pixelColor2 = blend( leds[rotate(tz.second())], config.secondColor, msto255);
+		int msto255 = map(tz.ms(), 1, 1000, 0, 255);
+		CRGB pixelColor1 = blend(clockdisplays[config.activeclockdisplay].secondColor, leds[rotate(tz.second() - 1)], msto255);
+		CRGB pixelColor2 = blend(leds[rotate(tz.second())], clockdisplays[config.activeclockdisplay].secondColor, msto255);
 
 		leds[rotate(tz.second())] = pixelColor2;
-		leds[rotate(tz.second()-1)] = pixelColor1;   */
+		leds[rotate(tz.second() - 1)] = pixelColor1;
 
 		//normal
-		//leds[rotate(tz.second())] = config.secondColor;
-		leds[rotate(tz.second())] = clockdisplays[0].secondColor;
+
+		//leds[rotate(tz.second())] = clockdisplays[config.activeclockdisplay].secondColor;
 	}
 
-	if (config.showms == 1)
+	if (clockdisplays[config.activeclockdisplay].showms == 1)
 	{
 		int ms = map(tz.ms(), 1, 1000, 0, 59);
 
 		//leds[rotate(ms)] = config.secondColor;
-		leds[rotate(ms)] = clockdisplays[0].secondColor;
+		leds[rotate(ms)] = clockdisplays[config.activeclockdisplay].secondColor;
 	}
 
 	currentMillis = millis();
 
-	if (config.autobrightness == 1)
+	if (clockdisplays[config.activeclockdisplay].autobrightness == 1)
 	{
 
 		//Set brightness when auto brightness is active
