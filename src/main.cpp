@@ -4,7 +4,6 @@
 #include <ESP8266WiFi.h>
 
 #include <ESP8266mDNS.h> // Include the mDNS library
-//#include <ESP8266SSDP.h>
 
 #include <FastLED.h>
 
@@ -14,36 +13,45 @@
 #include <AsyncElegantOTA.h>
 #include <ArduinoJson.h>
 
-// How many leds are in the strip?
+#include "LittleFS.h" // LittleFS is declared
+
+// How many leds are in the clock?
 #define NUM_LEDS 60
 
 // rotate leds by this number. Led ring is connected upside down
 #define ROTATE_LEDS 30
+
+// Max brightness
 #define MaxBrightness 255
+// Min brightness
 #define MinBrightness 15
+
+//
 #define DATA_PIN 3
 
 #define LIGHTSENSORPIN A0 //Ambient light sensor reading
 
-#define EXE_INTERVAL 5000
-unsigned long lastExecutedMillis = 0; // vairable to save the last executed time
+//Interval to check light sensor value
+#define EXE_INTERVAL_AUTO_BRIGHTNESS 5000
+unsigned long lastExecutedMillis = 0; // variable to save the last executed time
 unsigned long currentMillis;
 
 float lightReading;
 
-#define CLOCK_DISPLAYS 5
+//Nr of user defined clock displays
+#define CLOCK_DISPLAYS 8
+
+//Nr of user defines schedules
+#define SCHEDULES 12
 
 // Config
 String jsonConfigfile;
+String jsonSchedulefile;
+String jsonClkdisplaysfile;
 
 struct Config
 {
-
-	int showms;
 	int activeclockdisplay;
-	int showseconds;
-	//int autobrightness;
-	//int rainbowgb;
 	char tz[64];
 	char ssid[33];
 	char wifipassword[65];
@@ -60,14 +68,31 @@ typedef struct Clockdisplay
 	int showms;
 	int showseconds;
 	int autobrightness;
+	int brightness;
 	int rainbowgb;
 } clockdisplay;
 
-clockdisplay clockdisplays[CLOCK_DISPLAYS]; //create an array of 5 clock displays
+typedef struct Schedule
+{
+	int hour;
+	int minute;
+	int activeclockdisplay;
+	int active;
+
+} schedule;
+
+schedule schedules[SCHEDULES];
+
+int scheduleId = 0;
+int currentMinute;
+
+clockdisplay clockdisplays[CLOCK_DISPLAYS]; //Array of clock displays
 
 Config config; // <- global configuration object
 
-// This is an array of leds.  One item for each led in your strip.
+tmElements_t tm;
+
+// This is an array of leds.  One item for each led in the clock
 CRGB leds[NUM_LEDS];
 
 Timezone tz;
@@ -93,7 +118,6 @@ String processor(const String &var)
 	}
 	if (var == "backGroundColor")
 	{
-
 		return String(inttoHex(clockdisplays[config.activeclockdisplay].backgroundColor, 6));
 	}
 	if (var == "hourMarkColor")
@@ -144,7 +168,15 @@ String processor(const String &var)
 	}
 	if (var == "wifipassword")
 	{
-		return String(config.wifipassword);
+
+		if (String(config.wifipassword).isEmpty())
+		{
+			return String(config.wifipassword);
+		}
+		else
+		{
+			return String("********");
+		}
 	}
 	if (var == "hostname")
 	{
@@ -157,14 +189,52 @@ String processor(const String &var)
 	return String();
 }
 
-// Saves the configuration to a file
-void saveConfiguration(const char *filename, const Config &config)
+void saveSchedules(const char *filename)
 {
 	// Delete existing file, otherwise the configuration is appended to the file
-	SPIFFS.remove(filename);
+	LittleFS.remove(filename);
+
+	File schedulefile = LittleFS.open(filename, "w");
+
+	if (!schedulefile)
+	{
+		Serial.println(F("Failed to create file"));
+		return;
+	}
+
+	// Allocate a temporary JsonDocument
+	// Don't forget to change the capacity to match your requirements.
+	// Use arduinojson.org/assistant to compute the capacity.
+
+	DynamicJsonDocument data(1536);
+	// Set the values in the document
+	for (int i = 0; i <= SCHEDULES - 1; i++)
+	{
+		JsonObject obj = data.createNestedObject();
+		obj["i"] = i;
+		obj["a"] = schedules[i].active;
+		obj["acd"] = schedules[i].activeclockdisplay;
+		obj["h"] = schedules[i].hour;
+		obj["m"] = schedules[i].minute;
+	}
+
+	// Serialize JSON to file
+	if (serializeJson(data, schedulefile) == 0)
+	{
+		Serial.println(F("Failed to write to file"));
+	}
+
+	// Close the file
+	schedulefile.close();
+}
+
+void saveConfiguration(const char *filename)
+{
+	// Delete existing file, otherwise the configuration is appended to the file
+	LittleFS.remove(filename);
 
 	// Open file for writing
-	File configfile = SPIFFS.open("/config.json", "w");
+	File configfile = LittleFS.open(filename, "w");
 
 	if (!configfile)
 	{
@@ -175,60 +245,14 @@ void saveConfiguration(const char *filename, const Config &config)
 	// Allocate a temporary JsonDocument
 	// Don't forget to change the capacity to match your requirements.
 	// Use arduinojson.org/assistant to compute the capacity.
-	StaticJsonDocument<2048> doc;
 
-	// Set the values in the document
+	DynamicJsonDocument doc(2048);
 
-	doc["backgroundcolor0"] = clockdisplays[0].backgroundColor;
-	doc["hourmarkcolor0"] = clockdisplays[0].hourMarkColor;
-	doc["hourcolor0"] = clockdisplays[0].hourColor;
-	doc["minutecolor0"] = clockdisplays[0].minuteColor;
-	doc["secondcolor0"] = clockdisplays[0].secondColor;
-	doc["showms0"] = clockdisplays[0].showms;
-	doc["showseconds0"] = clockdisplays[0].showseconds;
-	doc["autobrightness0"] = clockdisplays[0].autobrightness;
-	doc["rainbowbg0"] = clockdisplays[0].rainbowgb;
-	doc["backgroundcolor1"] = clockdisplays[1].backgroundColor;
-	doc["hourmarkcolor1"] = clockdisplays[1].hourMarkColor;
-	doc["hourcolor1"] = clockdisplays[1].hourColor;
-	doc["minutecolor1"] = clockdisplays[1].minuteColor;
-	doc["secondcolor1"] = clockdisplays[1].secondColor;
-	doc["showms1"] = clockdisplays[1].showms;
-	doc["showseconds1"] = clockdisplays[1].showseconds;
-	doc["autobrightness1"] = clockdisplays[1].autobrightness;
-	doc["rainbowbg1"] = clockdisplays[1].rainbowgb;
-	doc["backgroundcolor2"] = clockdisplays[2].backgroundColor;
-	doc["hourmarkcolor2"] = clockdisplays[2].hourMarkColor;
-	doc["hourcolor2"] = clockdisplays[2].hourColor;
-	doc["minutecolor2"] = clockdisplays[2].minuteColor;
-	doc["secondcolor2"] = clockdisplays[2].secondColor;
-	doc["showms2"] = clockdisplays[2].showms;
-	doc["showseconds2"] = clockdisplays[2].showseconds;
-	doc["autobrightness2"] = clockdisplays[2].autobrightness;
-	doc["rainbowbg2"] = clockdisplays[2].rainbowgb;
-	doc["backgroundcolor3"] = clockdisplays[3].backgroundColor;
-	doc["hourmarkcolor3"] = clockdisplays[3].hourMarkColor;
-	doc["hourcolor3"] = clockdisplays[3].hourColor;
-	doc["minutecolor3"] = clockdisplays[3].minuteColor;
-	doc["secondcolor3"] = clockdisplays[3].secondColor;
-	doc["showms3"] = clockdisplays[3].showms;
-	doc["showseconds3"] = clockdisplays[3].showseconds;
-	doc["autobrightness3"] = clockdisplays[3].autobrightness;
-	doc["rainbowbg3"] = clockdisplays[3].rainbowgb;
-	doc["backgroundcolor4"] = clockdisplays[4].backgroundColor;
-	doc["hourmarkcolor4"] = clockdisplays[4].hourMarkColor;
-	doc["hourcolor4"] = clockdisplays[4].hourColor;
-	doc["minutecolor4"] = clockdisplays[4].minuteColor;
-	doc["secondcolor4"] = clockdisplays[4].secondColor;
-	doc["showms4"] = clockdisplays[4].showms;
-	doc["showseconds4"] = clockdisplays[4].showseconds;
-	doc["autobrightness4"] = clockdisplays[4].autobrightness;
-	doc["rainbowbg4"] = clockdisplays[4].rainbowgb;
-	doc["activeclockdisplay"] = config.activeclockdisplay;
+	doc["acd"] = config.activeclockdisplay;
 	doc["tz"] = config.tz;
 	doc["ssid"] = config.ssid;
-	doc["wifipassword"] = config.wifipassword;
-	doc["hostname"] = config.hostname;
+	doc["wp"] = config.wifipassword;
+	doc["hn"] = config.hostname;
 
 	Serial.print(config.tz);
 
@@ -240,19 +264,67 @@ void saveConfiguration(const char *filename, const Config &config)
 
 	// Close the file
 	configfile.close();
+
 }
 
+void saveClockDisplays(const char *filename)
+{
+	// Delete existing file, otherwise the configuration is appended to the file
+	LittleFS.remove(filename);
+
+	// Open file for writing
+	File configfile = LittleFS.open(filename, "w");
+
+	if (!configfile)
+	{
+		Serial.println(F("Failed to create file"));
+		return;
+	}
+
+	// Allocate a temporary JsonDocument
+	// Don't forget to change the capacity to match your requirements.
+	// Use arduinojson.org/assistant to compute the capacity.
+
+	DynamicJsonDocument data(2048);
+
+	// Set the values in the document
+	for (int i = 0; i <= CLOCK_DISPLAYS - 1; i++)
+
+	{
+		JsonObject obj = data.createNestedObject();
+		obj["i"] = i;
+		obj["bgc"] = clockdisplays[i].backgroundColor;
+		obj["hmc"] = clockdisplays[i].hourMarkColor;
+		obj["hc"] = clockdisplays[i].hourColor;
+		obj["mc"] = clockdisplays[i].minuteColor;
+		obj["sc"] = clockdisplays[i].secondColor;
+		obj["ms"] = clockdisplays[i].showms;
+		obj["s"] = clockdisplays[i].showseconds;
+		obj["ab"] = clockdisplays[i].autobrightness;
+		obj["bn"] = clockdisplays[i].brightness;
+		obj["rb"] = clockdisplays[i].rainbowgb;
+	}
+
+	// Serialize JSON to file
+	if (serializeJson(data, configfile) == 0)
+	{
+		Serial.println(F("Failed to write to file"));
+	}
+
+	// Close the file
+	configfile.close();
+
+}
+
+//Rotate clock display
 int rotate(int nr)
 {
-
 	if ((nr + ROTATE_LEDS) >= 60)
 	{
-
 		return (nr + ROTATE_LEDS) - NUM_LEDS;
 	}
 	else
 	{
-
 		return (nr + ROTATE_LEDS);
 	}
 }
@@ -297,91 +369,104 @@ void setup()
 		;
 	} // wait for Serial port to connect. Needed for native USB port only
 
-	// Initialize SPIFFS
-	if (!SPIFFS.begin())
+	// Initialize LittleFS
+	if (!LittleFS.begin())
 	{
-		Serial.println("An Error has occurred while mounting SPIFFS");
+		Serial.println("An Error has occurred while mounting LittleFS");
 		return;
 	}
 
-	////// Config //////
-	File configfile = SPIFFS.open("/config.json", "r");
-
+	///// Config file /////
+	File configfile = LittleFS.open("/config.json", "r");
 	if (!configfile)
 	{
-		Serial.println("file open failed");
+		Serial.println("Config file open failed");
+	}
+	// Allocate a temporary JsonDocument
+	// Don't forget to change the capacity to match your requirements.
+	// Use arduinojson.org/assistant to compute the capacity.
+	DynamicJsonDocument config_doc(256);
+
+	jsonConfigfile = (configfile.readString());
+
+	// Deserialize the JSON document
+	DeserializationError error_config = deserializeJson(config_doc, jsonConfigfile);
+	if (error_config)
+		Serial.println(F("Failed to read schedule file, using default configuration"));
+
+	configfile.close(); //close file
+
+	///// Schedule file /////
+	File schedulefile = LittleFS.open("/schedules.json", "r");
+	if (!schedulefile)
+	{
+		Serial.println("Schedule file open failed");
+	}
+	// Allocate a temporary JsonDocument
+	// Don't forget to change the capacity to match your requirements.
+	// Use arduinojson.org/assistant to compute the capacity.
+	DynamicJsonDocument schedule_doc(1536);
+
+	jsonSchedulefile = (schedulefile.readString());
+
+	// Deserialize the JSON document
+	DeserializationError error_schedule = deserializeJson(schedule_doc, jsonSchedulefile);
+	if (error_schedule)
+		Serial.println(F("Failed to read schedule file, using default configuration"));
+
+	schedulefile.close(); //close file
+
+	for (int i = 0; i <= SCHEDULES - 1; i++)
+	{
+		schedules[i].active = schedule_doc[i]["a"] | 0;
+		schedules[i].activeclockdisplay = schedule_doc[i]["acd"] | 0;
+		schedules[i].hour = schedule_doc[i]["h"] | 0;
+		schedules[i].minute = schedule_doc[i]["m"] | 0;
+	}
+
+	////// Config file //////
+	File clkdisplaysfile = LittleFS.open("/clkdisplays.json", "r");
+
+	if (!clkdisplaysfile)
+	{
+		Serial.println("Config file open failed");
 	}
 
 	// Allocate a temporary JsonDocument
 	// Don't forget to change the capacity to match your requirements.
 	// Use arduinojson.org/assistant to compute the capacity.
-	StaticJsonDocument<2048> doc;
+	DynamicJsonDocument clkdisplays_doc(2048);
 
-	jsonConfigfile = (configfile.readString());
+	jsonClkdisplaysfile = (clkdisplaysfile.readString());
 
 	// Deserialize the JSON document
-	DeserializationError error = deserializeJson(doc, jsonConfigfile);
-	if (error)
+	DeserializationError error_clkdisplays = deserializeJson(clkdisplays_doc, jsonClkdisplaysfile);
+	if (error_clkdisplays)
 		Serial.println(F("Failed to read file, using default configuration"));
 
-	configfile.close(); //close file
+	clkdisplaysfile.close(); //close file
 
-	clockdisplays[0].backgroundColor = doc["backgroundcolor0"] | 0x002622;
-	clockdisplays[0].hourMarkColor = doc["hourmarkcolor0"] | 0xb81f00;
-	clockdisplays[0].hourColor = doc["hourcolor0"] | 0xffe3e9;
-	clockdisplays[0].minuteColor = doc["minutecolor0"] | 0xffe3e9;
-	clockdisplays[0].secondColor = doc["secondcolor0"] | 0xffe3e9;
-	clockdisplays[0].showms = doc["showms0"] | 0;
-	clockdisplays[0].showseconds = doc["showseconds0"] | 1;
-	clockdisplays[0].autobrightness = doc["autobrightness0"] | 1;
-	clockdisplays[0].rainbowgb = doc["rainbowbg0"] | 0;
+	for (int i = 0; i <= CLOCK_DISPLAYS - 1; i++)
+	{
 
-	clockdisplays[1].backgroundColor = doc["backgroundcolor1"] | 0x002622;
-	clockdisplays[1].hourMarkColor = doc["hourmarkcolor1"] | 0xb81f00;
-	clockdisplays[1].hourColor = doc["hourcolor1"] | 0xffe3e9;
-	clockdisplays[1].minuteColor = doc["minutecolor1"] | 0xffe3e9;
-	clockdisplays[1].secondColor = doc["secondcolor1"] | 0xffe3e9;
-	clockdisplays[1].showms = doc["showms1"] | 0;
-	clockdisplays[1].showseconds = doc["showseconds1"] | 1;
-	clockdisplays[1].autobrightness = doc["autobrightness1"] | 1;
-	clockdisplays[1].rainbowgb = doc["rainbowbg1"] | 0;
+		clockdisplays[i].backgroundColor = clkdisplays_doc[i]["bgc"] | 0x002622;
+		clockdisplays[i].hourMarkColor = clkdisplays_doc[i]["hmc"] | 0xb81f00;
+		clockdisplays[i].hourColor = clkdisplays_doc[i]["hc"] | 0xffe3e9;
+		clockdisplays[i].minuteColor = clkdisplays_doc[i]["mc"] | 0xffe3e9;
+		clockdisplays[i].secondColor = clkdisplays_doc[i]["sc"] | 0xffe3e9;
+		clockdisplays[i].showms = clkdisplays_doc[i]["ms"] | 0;
+		clockdisplays[i].showseconds = clkdisplays_doc[i]["s"] | 1;
+		clockdisplays[i].autobrightness = clkdisplays_doc[i]["ab"] | 1;
+		clockdisplays[i].brightness = clkdisplays_doc[i]["bn"] | 128;
+		clockdisplays[i].rainbowgb = clkdisplays_doc[i]["rb"] | 0;
+	}
 
-	clockdisplays[2].backgroundColor = doc["backgroundcolor2"] | 0x002622;
-	clockdisplays[2].hourMarkColor = doc["hourmarkcolor2"] | 0xb81f00;
-	clockdisplays[2].hourColor = doc["hourcolor2"] | 0xffe3e9;
-	clockdisplays[2].minuteColor = doc["minutecolor2"] | 0xffe3e9;
-	clockdisplays[2].secondColor = doc["secondcolor2"] | 0xffe3e9;
-	clockdisplays[2].showms = doc["showms2"] | 0;
-	clockdisplays[2].showseconds = doc["showseconds2"] | 1;
-	clockdisplays[2].autobrightness = doc["autobrightness2"] | 1;
-	clockdisplays[2].rainbowgb = doc["rainbowbg2"] | 0;
+	config.activeclockdisplay = config_doc["acd"] | 0;
 
-	clockdisplays[3].backgroundColor = doc["backgroundcolor3"] | 0x002622;
-	clockdisplays[3].hourMarkColor = doc["hourmarkcolor3"] | 0xb81f00;
-	clockdisplays[3].hourColor = doc["hourcolor3"] | 0xffe3e9;
-	clockdisplays[3].minuteColor = doc["minutecolor3"] | 0xffe3e9;
-	clockdisplays[3].secondColor = doc["secondcolor3"] | 0xffe3e9;
-	clockdisplays[3].showms = doc["showms3"] | 0;
-	clockdisplays[3].showseconds = doc["showseconds3"] | 1;
-	clockdisplays[3].autobrightness = doc["autobrightness3"] | 1;
-	clockdisplays[3].rainbowgb = doc["rainbowbg3"] | 0;
-
-	clockdisplays[4].backgroundColor = doc["backgroundcolor4"] | 0x002622;
-	clockdisplays[4].hourMarkColor = doc["hourmarkcolor4"] | 0xb81f00;
-	clockdisplays[4].hourColor = doc["hourcolor4"] | 0xffe3e9;
-	clockdisplays[4].minuteColor = doc["minutecolor4"] | 0xffe3e9;
-	clockdisplays[4].secondColor = doc["secondcolor4"] | 0xffe3e9;
-	clockdisplays[4].showms = doc["showms4"] | 0;
-	clockdisplays[4].showseconds = doc["showseconds4"] | 1;
-	clockdisplays[4].autobrightness = doc["autobrightness4"] | 1;
-	clockdisplays[4].rainbowgb = doc["rainbowbg4"] | 0;
-
-	config.activeclockdisplay = doc["activeclockdisplay"] | 0;
-
-	strlcpy(config.tz, doc["tz"] | "UTC", sizeof(config.tz));
-	strlcpy(config.ssid, doc["ssid"] | "", sizeof(config.ssid));
-	strlcpy(config.wifipassword, doc["wifipassword"] | "", sizeof(config.wifipassword));
-	strlcpy(config.hostname, doc["hostname"] | "ledclock", sizeof(config.hostname));
+	strlcpy(config.tz, config_doc["tz"] | "UTC", sizeof(config.tz));
+	strlcpy(config.ssid, config_doc["ssid"] | "", sizeof(config.ssid));
+	strlcpy(config.wifipassword, config_doc["wp"] | "", sizeof(config.wifipassword));
+	strlcpy(config.hostname, config_doc["hn"] | "ledclock", sizeof(config.hostname));
 
 	Serial.println("<<<<<< Clock configuration >>>>>>>");
 	Serial.println("Background HEX color: " + inttoHex(clockdisplays[config.activeclockdisplay].backgroundColor, 6));
@@ -389,17 +474,18 @@ void setup()
 	Serial.println("Show ms led: " + String(clockdisplays[config.activeclockdisplay].showms));
 	Serial.println("Timezone: " + String(config.tz));
 	Serial.println("ssid: " + String(config.ssid));
-	//Serial.println("wifipassword: xxxxxxx"); // + String(config.wifipassword));
 	Serial.println("hostname: " + String(config.hostname));
 
+	Serial.println(jsonSchedulefile);
 	Serial.println(jsonConfigfile);
+	Serial.println(jsonClkdisplaysfile);
 
 	FastLED.setBrightness(128);
 	FastLED.setMaxPowerInVoltsAndMilliamps(5, 1000); //max 1 amperé power usage
 
 	FastLED.addLeds<SK6812, DATA_PIN, GRB>(leds, NUM_LEDS) // GRB ordering is typical
-		.setCorrection(TypicalLEDStrip);
-	//.setCorrection(0xE6E0E6);
+		//	.setCorrection(TypicalLEDStrip);
+		.setCorrection(0xE6E0E6);
 	FastLED.setMaxRefreshRate(400);
 
 	WiFi.mode(WIFI_STA);
@@ -411,7 +497,6 @@ void setup()
 	//setDebug(INFO);
 	if (checkConnection())
 	{
-
 		//When there is a wifi connection get time from NTP
 		waitForSync();
 
@@ -431,16 +516,11 @@ void setup()
 		WiFi.disconnect();
 		Serial.println("starting AP");
 		//default IP = 192.168.4.1
-		WiFi.softAP("ledclock", "letmein!");
+		WiFi.softAP("Ledclock", "letmein!");
 	}
 
 	// Provide official timezone names
 	// https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
-
-	//Set timezone
-	//tz.setCache(0);
-	//tz.setLocation(config.tz);
-
 	if (!tz.setCache(0))
 		tz.setLocation(config.tz);
 
@@ -450,19 +530,93 @@ void setup()
 	// Route for root / web page
 	server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
 		//request->send_P(200, "text/html", index_html, processor);
-		request->send(SPIFFS, "/index.htm", String(), false, processor);
+		request->send(LittleFS, "/index.htm", String(), false, processor);
 	});
-	server.serveStatic("/mdg-ledr.js", SPIFFS, "/mdg-ledr.js", "max-age=31536000");
-	server.serveStatic("/mdg-ledr.css", SPIFFS, "mdg-ledr.css", "max-age=31536000");
-	server.serveStatic("/mdi-font.ttf", SPIFFS, "/mdi-font.ttf", "max-age=31536000");
-	server.serveStatic("/mdi-font.woff", SPIFFS, "/mdi-font.woff", "max-age=31536000");
-	server.serveStatic("/mdi-font.woff2", SPIFFS, "/mdi-font.woff2", "max-age=31536000");
+	server.serveStatic("/mdg-ledr.js", LittleFS, "/mdg-ledr.js", "max-age=31536000");
+	server.serveStatic("/mdg-ledr.css", LittleFS, "mdg-ledr.css", "max-age=31536000");
+	server.serveStatic("/mdi-font.ttf", LittleFS, "/mdi-font.ttf", "max-age=31536000");
+	server.serveStatic("/mdi-font.woff", LittleFS, "/mdi-font.woff", "max-age=31536000");
+	server.serveStatic("/mdi-font.woff2", LittleFS, "/mdi-font.woff2", "max-age=31536000");
 
-	server.on("/save", HTTP_GET, [](AsyncWebServerRequest *request) { //save settings
-		saveConfiguration("/config.json", config);
+	server.on("/save-config", HTTP_GET, [](AsyncWebServerRequest *request) { //save config
+		Serial.println("save");
+
+		saveConfiguration("/config.json");
 		request->send(200, "text/plain", "OK");
 	});
 
+	server.on("/save-clockdisplays", HTTP_GET, [](AsyncWebServerRequest *request) { //save clockdisplays
+		saveClockDisplays("/clkdisplays.json");
+		request->send(200, "text/plain", "OK");
+	});
+	server.on("/get-clockdisplay", HTTP_GET, [](AsyncWebServerRequest *request) {
+		StaticJsonDocument<256> data;
+		if (request->hasParam("id"))
+		{
+			int i = (request->getParam("id")->value()).toInt();
+
+			data["bgc"] = String(inttoHex(clockdisplays[i].backgroundColor, 6));
+			data["hmc"] = String(inttoHex(clockdisplays[i].hourMarkColor, 6));
+			data["hc"] = String(inttoHex(clockdisplays[i].hourColor, 6));
+			data["mc"] = String(inttoHex(clockdisplays[i].minuteColor, 6));
+			data["sc"] = String(inttoHex(clockdisplays[i].secondColor, 6));
+			data["ms"] = clockdisplays[i].showms;
+			data["s"] = clockdisplays[i].showseconds;
+			data["ab"] = clockdisplays[i].autobrightness;
+			data["bn"] = clockdisplays[i].brightness;
+			data["rb"] = clockdisplays[i].rainbowgb;
+		}
+		else
+		{
+			data["message"] = "No clockdisplay id";
+		}
+		String response;
+		serializeJson(data, response);
+		request->send(200, "application/json", response);
+	});
+	server.on("/get-schedule", HTTP_GET, [](AsyncWebServerRequest *request) {
+		StaticJsonDocument<256> data;
+		if (request->hasParam("id"))
+		{
+
+			int i = (request->getParam("id")->value()).toInt();
+			if (i <= SCHEDULES)
+			{
+				data["a"] = schedules[i].active;
+				data["acd"] = schedules[i].activeclockdisplay;
+				data["h"] = schedules[i].hour;
+				data["m"] = schedules[i].minute;
+			}
+			else
+			{
+				data["message"] = "Schedule not found";
+			}
+		}
+		else
+		{
+			data["message"] = "No Schedule id";
+		}
+		String response;
+		serializeJson(data, response);
+		request->send(200, "application/json", response);
+	});
+	server.on("/get-schedules", HTTP_GET, [](AsyncWebServerRequest *request) {
+		StaticJsonDocument<1536> data;
+
+		for (int i = 0; i <= SCHEDULES - 1; i++)
+		{
+			JsonObject obj = data.createNestedObject();
+			obj["i"] = i;
+			obj["a"] = schedules[i].active;
+			obj["acd"] = schedules[i].activeclockdisplay;
+			obj["h"] = schedules[i].hour;
+			obj["m"] = schedules[i].minute;
+		}
+
+		String response;
+		serializeJson(data, response);
+		request->send(200, "application/json", response);
+	});
 	server.on("/reboot", HTTP_GET, [](AsyncWebServerRequest *request) { //reboot ESP
 		request->send(200, "text/plain", "OK");
 		delay(500);
@@ -474,33 +628,26 @@ void setup()
 		if (request->hasParam("hourcolor"))
 		{
 			inputMessage = request->getParam("hourcolor")->value();
-
-			//config.hourColor = hstol(inputMessage);
 			clockdisplays[config.activeclockdisplay].hourColor = hstol(inputMessage);
 		}
 		else if (request->hasParam("minutecolor"))
 		{
 			inputMessage = request->getParam("minutecolor")->value();
-
-			//config.minuteColor = hstol(inputMessage);
 			clockdisplays[config.activeclockdisplay].minuteColor = hstol(inputMessage);
 		}
 		else if (request->hasParam("secondcolor"))
 		{
 			inputMessage = request->getParam("secondcolor")->value();
-			//config.secondColor = hstol(inputMessage);
 			clockdisplays[config.activeclockdisplay].secondColor = hstol(inputMessage);
 		}
 		else if (request->hasParam("backgroundcolor"))
 		{
 			inputMessage = request->getParam("backgroundcolor")->value();
-			//config.backgroundColor = hstol(inputMessage);
 			clockdisplays[config.activeclockdisplay].backgroundColor = hstol(inputMessage);
 		}
 		else if (request->hasParam("hourmarkcolor"))
 		{
 			inputMessage = request->getParam("hourmarkcolor")->value();
-			//config.hourMarkColor = hstol(inputMessage);
 			clockdisplays[config.activeclockdisplay].hourMarkColor = hstol(inputMessage);
 		}
 		else
@@ -509,28 +656,53 @@ void setup()
 		}
 		request->send(200, "text/plain", "OK");
 	});
-
-	server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request) {
+	server.on("/set-schedule", HTTP_GET, [](AsyncWebServerRequest *request) {
 		int paramsNr = request->params();
-		//Serial.println(paramsNr);
 
 		for (int i = 0; i < paramsNr; i++)
 		{
-
 			AsyncWebParameter *p = request->getParam(i);
 
-			//Serial.print("Param name: ");
-			//Serial.println(p->name());
-			//Serial.print("Param value: ");
-			//Serial.println(p->value());
-			//Serial.println("------");
+			if (p->name() == "id")
+			{
+				scheduleId = p->value().toInt();
+			}
+			else if (p->name() == "hour")
+			{
+				schedules[scheduleId].hour = p->value().toInt();
+				Serial.println(scheduleId);
+			}
+			else if (p->name() == "minute")
+			{
+				schedules[scheduleId].minute = p->value().toInt();
+			}
+			else if (p->name() == "active")
+			{
+				schedules[scheduleId].active = p->value().toInt();
+			}
+			else if (p->name() == "activeclockdisplay")
+			{
+				schedules[scheduleId].activeclockdisplay = p->value().toInt();
+			}
+		}
+		saveSchedules("/schedules.json");
+
+		request->send(200, "text/plain", "OK");
+	});
+	server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request) {
+		int paramsNr = request->params();
+
+		for (int i = 0; i < paramsNr; i++)
+		{
+			AsyncWebParameter *p = request->getParam(i);
 
 			if (p->name() == "brightness")
 			{
-				//Serial.println("brightness");
 				if (clockdisplays[config.activeclockdisplay].autobrightness == 0)
 				{
-					int NumtToBrightness = map(p->value().toInt(), 0, 255, MinBrightness, MaxBrightness);
+					clockdisplays[config.activeclockdisplay].brightness = p->value().toInt();
+
+					int NumtToBrightness = map(clockdisplays[config.activeclockdisplay].brightness, 0, 255, MinBrightness, MaxBrightness);
 					FastLED.setBrightness(NumtToBrightness);
 				}
 			}
@@ -592,13 +764,32 @@ void setup()
 void loop()
 {
 
+	events();
+
 	AsyncElegantOTA.loop();
 
 	MDNS.update();
 
-	for (int Led = 0; Led < 60; Led = Led + 1)
+	//Process Schedule every new minute
+	if (currentMinute != tz.minute()) //check if a minute has passed
 	{
 
+		currentMinute = tz.minute(); //set current minute
+		//Serial.println("Check for event.....");
+		//	breakTime(tz.now(), tm);
+		for (int i = 0; i <= SCHEDULES - 1; i++)
+		{
+			if (tz.hour() == schedules[i].hour && tz.minute() == schedules[i].minute && schedules[i].active == 1)
+			{
+				config.activeclockdisplay = schedules[i].activeclockdisplay;
+				Serial.println("Schedule active..");
+			}
+		}
+	}
+
+	//Set background color
+	for (int Led = 0; Led < 60; Led = Led + 1)
+	{
 		leds[Led] = clockdisplays[config.activeclockdisplay].backgroundColor;
 	}
 
@@ -607,13 +798,14 @@ void loop()
 		fill_rainbow(leds, NUM_LEDS, 5, 8);
 	}
 
+	//Set hour marks
 	for (int Led = 0; Led <= 55; Led = Led + 5)
 	{
-
 		leds[rotate(Led)] = clockdisplays[config.activeclockdisplay].hourMarkColor;
 		//leds[rotate(Led)].fadeToBlackBy(230);
 	}
 
+	//Hour hand
 	int houroffset = map(tz.minute(), 0, 60, 0, 5); //move the hour hand when the minutes pass
 
 	uint8_t hrs12 = (tz.hour() % 12);
@@ -627,13 +819,13 @@ void loop()
 	//Second hand
 	if (clockdisplays[config.activeclockdisplay].showseconds == 1)
 	{
-
+		
 		int msto255 = map(tz.ms(), 1, 1000, 0, 255);
 		CRGB pixelColor1 = blend(clockdisplays[config.activeclockdisplay].secondColor, leds[rotate(tz.second() - 1)], msto255);
 		CRGB pixelColor2 = blend(leds[rotate(tz.second())], clockdisplays[config.activeclockdisplay].secondColor, msto255);
 
 		leds[rotate(tz.second())] = pixelColor2;
-		leds[rotate(tz.second() - 1)] = pixelColor1;
+		leds[rotate(tz.second() - 1)] = pixelColor1; 
 
 		//normal
 
@@ -650,26 +842,34 @@ void loop()
 
 	currentMillis = millis();
 
+	// Set Brightness
 	if (clockdisplays[config.activeclockdisplay].autobrightness == 1)
 	{
-
 		//Set brightness when auto brightness is active
-		if (currentMillis - lastExecutedMillis >= EXE_INTERVAL)
+		if (currentMillis - lastExecutedMillis >= EXE_INTERVAL_AUTO_BRIGHTNESS)
 		{
 			lastExecutedMillis = currentMillis;		   // save the last executed time
 			lightReading = analogRead(LIGHTSENSORPIN); //Read light level
 
-			int brightnessMap = map(lightReading, 0, 64, MinBrightness, MaxBrightness);
+			int brightnessMap = map(lightReading, 0, 128, MinBrightness, MaxBrightness);
 			brightnessMap = constrain(brightnessMap, 0, 255);
 
 			sliderBrightnessValue = brightnessMap;
 			//int brightnessMap = map(lightReading, 0, 1024, MinBrightness, MaxBrightness);
 
 			FastLED.setBrightness(brightnessMap);
-
 			//Serial.println(lightReading);
 			//Serial.println(brightnessMap);
 		}
+	}
+	else
+	{
+		sliderBrightnessValue = clockdisplays[config.activeclockdisplay].brightness;
+
+		int brightnessMap = map(sliderBrightnessValue, 0, 255, MinBrightness, MaxBrightness);
+		brightnessMap = constrain(brightnessMap, 0, 255);
+
+		FastLED.setBrightness(brightnessMap);
 	}
 
 	FastLED.show();

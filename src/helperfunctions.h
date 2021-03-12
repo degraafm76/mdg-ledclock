@@ -21,4 +21,3 @@ long hstol(String recv)
 	return strtol(c, NULL, 16);
 }
 
-

@@ -3,7 +3,7 @@
 
 <head>
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-title" content="MDG Ledclock-121">
+    <meta name="apple-mobile-web-app-title" content="MDG Ledclock">
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <!--CSS and JS are composed files containing Onsen ui 2.11.1 and iro.js v5 -->
     <link rel="stylesheet" href="/mdg-ledr.css">
@@ -18,28 +18,33 @@
         <ons-tabbar position="auto">
             <ons-tab page="tab1.html" label="Look & Feel" icon="md-palette" active>
             </ons-tab>
-            <ons-tab page="tab2.html" label="Settings" icon="md-settings">
+            <ons-tab page="tab2.html" label="Schedules" icon="md-alarm">
+            </ons-tab>
+            <ons-tab page="tab3.html" label="Settings" icon="md-settings">
             </ons-tab>
         </ons-tabbar>
     </ons-page>
     <template id="tab1.html">
         <ons-page id="Tab1">
-            <ons-card>
-                <div style="text-align: center;" class="title">
-                    Brightness (LDR: %LDRValue%)
-                </div>
-                <ons-row style="margin-top: 20px;">
-                    <ons-col width="40px" style="text-align: center; line-height: 31px;">
-                        <ons-icon icon="md-brightness-low"></ons-icon>
-                    </ons-col>
-                    <ons-col>
-                        <ons-range id="brightness" style="width: 100%%;" min="0" max="255" value="%sliderBrightnessValue%"></ons-range>
-                    </ons-col>
-                    <ons-col width="40px" style="text-align: center; line-height: 31px;">
-                        <ons-icon icon="md-brightness-high"></ons-icon>
-                    </ons-col>
-                </ons-row>
-            </ons-card>
+            <ons-list>
+                <ons-list-item>
+                    <div class="center">
+                        Clock display:
+                    </div>
+                    <div class="right">
+                        <select name="activeclockdisplay" id="activeclockdisplay">
+                            <option value="0">1</option>
+                            <option value="1">2</option>
+                            <option value="2">3</option>
+                            <option value="3">4</option>
+                            <option value="4">5</option>
+                            <option value="5">6</option>
+                            <option value="6">7</option>
+                            <option value="7">8</option>
+                        </select>
+                    </div>
+                </ons-list-item>
+            </ons-list>
             <ons-card>
                 <div style="text-align: center;" class="title">
                     Background Color
@@ -81,7 +86,6 @@
                 </div>
             </ons-card>
             <ons-list>
-                <ons-list-header>Settings</ons-list-header>
                 <ons-list-item>
                     <div class="center">
                         Show milliseconds:
@@ -106,29 +110,28 @@
                         <ons-switch id="autobrightness" %autobrightness%></ons-switch>
                     </div>
                 </ons-list-item>
-                
-               
-               <ons-list-item>
-                <div class="center">
-                    Active clock display:
-                </div>
-                <div class="right">                 
-                        
-                            <select name="activeclockdisplay" id="activeclockdisplay">
-                                <option value="0">1</option>
-                                <option value="1">2</option>
-                                <option value="2">3</option>
-                                <option value="3">4</option>
-                                <option value="4">5</option>                                                           
-                            </select>                      
-                </div>               
-            </ons-list-item>
-        </ons-list>
-         
-  
-               
+                <ons-list-item>
 
- 
+                    <ons-row style="margin-top: 20px;">
+                        <ons-col>
+                            <div class="left">
+                                Brightness:
+                            </div>
+                        </ons-col>
+                        <ons-col width="40px" style="text-align: center; line-height: 31px;">
+                            <ons-icon icon="md-brightness-low"></ons-icon>
+                        </ons-col>
+
+                        <ons-col>
+                            <ons-range id="brightness" style="width: 100%%;" min="0" max="255"
+                                value="%sliderBrightnessValue%"></ons-range>
+                        </ons-col>
+                        <ons-col width="40px" style="text-align: center; line-height: 31px;">
+                            <ons-icon icon="md-brightness-high"></ons-icon>
+                        </ons-col>
+                    </ons-row>
+                </ons-list-item>
+            </ons-list>
             <p style="margin-top: 30px;text-align: right;">
                 <ons-button onclick="save_lf()">Save</ons-button>
             </p>
@@ -136,6 +139,55 @@
     </template>
     <template id="tab2.html">
         <ons-page id="Tab2">
+
+
+            <ons-dialog style='margin-left: 10px;margin-right: 10px;' id="schedule-dialog" cancelable>
+                <ons-toolbar inline>
+                    <div class="center" id="scheduletxt">
+                        Schedule...
+                    </div>
+                </ons-toolbar>
+                <div style="text-align: left; padding: 10px;">
+                    <div class="right">
+                        <input type="number" style='display:none' name="scheduleid" id="scheduleid">
+                    </div>
+
+                    <div style='color:white'>
+                        Hour:
+                        <select name="hour" id="hour"></select>
+                        Minute:
+                        <select name="minute" id="minute"></select>
+                    </div><br>
+                    <div style='color:white'>Clock display:
+                    <select name="scheduleclockdisplay" id="scheduleclockdisplay">
+                        <option value="0">1</option>
+                        <option value="1">2</option>
+                        <option value="2">3</option>
+                        <option value="3">4</option>
+                        <option value="4">5</option>
+                        <option value="5">6</option>
+                        <option value="6">7</option>
+                        <option value="7">8</option>
+                    </select>
+                </div><br>
+                    <div class="left">
+                        <div style='color:white'>Active:</div>
+                    
+                    <ons-switch id="active"></ons-switch>
+                </div>
+                    <p style="margin-top: 30px;">
+                        <ons-button modifier="large" onclick="save_schedule()">Save</ons-button>
+                    </p>
+                </div>
+            </ons-dialog>
+
+            <div id="id01"></div>
+
+        </ons-page>
+
+    </template>
+    <template id="tab3.html">
+        <ons-page id="Tab3">
             <ons-card>
                 <div style="text-align: center;" class="title">
                     Wifi settings
@@ -644,7 +696,18 @@
                 <ons-button onclick="save_settings()">Save & reboot</ons-button>
             </p>
         </ons-page>
+
+
+
     </template>
+    <ons-modal id="modal" direction="up">
+        <div style="text-align: center">
+            <p>
+                <ons-icon icon="md-spinner" size="28px" spin></ons-icon> Saving...
+            </p>
+        </div>
+    </ons-modal>
+
 </body>
 
 </html>
@@ -655,12 +718,128 @@
     var hourColorPicker;
     var minuteColorPicker;
     var secondColorPicker;
-
-
+    var selectFilled = 0;
     document.addEventListener('prechange', function (event) {
         document.querySelector('ons-toolbar .center')
             .innerHTML = event.tabItem.getAttribute('label');
+
+        //document.getElementById('hour').options.length = 0;
+
+        if (selectFilled == 0) {
+            var selectHour = document.getElementById('hour');
+            for (var i = 0; i <= 23; i++) {
+                var opt = document.createElement('option');
+                opt.appendChild(document.createTextNode(i));
+                opt.value = i;
+                selectHour.appendChild(opt);
+            }
+
+            //document.getElementById('minute').options.length = 0;
+            var selectMinute = document.getElementById('minute');
+            for (var i = 0; i <= 59; i++) {
+                var opt = document.createElement('option');
+                opt.appendChild(document.createTextNode(i));
+                opt.value = i;
+                selectMinute.appendChild(opt);
+            }
+            selectFilled = 1;
+            getschedule();
+        }
+
+
+
     });
+
+    function getschedule() {
+
+        var scheduleid = encodeURIComponent(document.getElementById('scheduleid').value);
+
+
+        fetchJSONFile("get-schedule?id=" + scheduleid + "&date=" + new Date().getTime(), function (data) {
+
+
+            if (data.a == 1) {
+                document.getElementById('active').checked = true;
+            } else {
+                document.getElementById('active').checked = false;
+            }
+            document.getElementById('hour').value = data.h;
+            document.getElementById('minute').value = data.m;
+            document.getElementById('scheduleclockdisplay').value = data.acd;
+        });
+    }
+
+    function getschedules() {
+        var xmlhttp = new XMLHttpRequest();
+        var url = "/get-schedules";
+
+        xmlhttp.onreadystatechange = function () {
+            if (this.readyState == 4 && this.status == 200) {
+                var myArr = JSON.parse(this.responseText);
+                myFunction(myArr);
+            }
+        };
+        xmlhttp.open("GET", url, true);
+        xmlhttp.send();
+
+        function myFunction(arr) {
+            var out = "";
+            var active = "";
+            var i;
+            var m;
+
+            out += '<ons-list>';
+
+            for (i = 0; i < arr.length; i++) {
+                if (arr[i].a == 1) {
+                    active = 'yes';
+                } else {
+                    active = 'no';
+                }
+
+                if (arr[i].m <= 9) {
+                    m = '0' + arr[i].m;
+                } else {
+                    m = arr[i].m;
+                }
+
+                out += '<ons-list-item onclick="selectSchedule(' + arr[i].i + ');" tappable>' + (arr[i].i + 1) + ' -&nbsp;&nbsp;Time: ' + arr[i].h + ':' + m + '&nbsp;&nbsp;Clock display: ' + (arr[i].acd+1) + '&nbsp;&nbsp;Active: ' + active + '</ons-list-item>';
+            }
+
+            out += '</ons-list>';
+            document.getElementById("id01").innerHTML = "";
+            document.getElementById("id01").innerHTML = out;
+        }
+    }
+
+    var showScheduleDialog = function () {
+        var dialog = document.getElementById('schedule-dialog');
+
+        if (dialog) {
+            dialog.show();
+        } else {
+            ons.createElement('dialog.html', { append: true })
+                .then(function (dialog) {
+                    dialog.show();
+
+                });
+        }
+    };
+
+    var hideDialog = function (id) {
+        document.getElementById(id).hide();
+
+    };
+
+    function selectSchedule(id) {
+
+        document.getElementById("scheduleid").value = id;
+        getschedule();
+        document.getElementById("scheduletxt").innerHTML = "";
+        document.getElementById("scheduletxt").innerHTML = "Schedule " + (id+1);
+        
+        showScheduleDialog();
+    }
 
     function set_theme(themeindex) {
 
@@ -669,7 +848,7 @@
             ["00000", "00000", "ff6200", "ff6200", "ff6200"],
             ["06103d", "5c5c5c", "ff1e00", "ff1e00", "ff1e00"],
             ["002622", "b81f00", "ffe3e9", "ffe3e9", "ffe3e9"]
-            
+
 
         ];
 
@@ -680,9 +859,24 @@
         secondColorPicker.color.hexString = themes[themeindex][4];
     }
 
+    function fetchJSONFile(path, callback) {
+        var httpRequest = new XMLHttpRequest();
+        httpRequest.onreadystatechange = function () {
+            if (httpRequest.readyState === 4) {
+                if (httpRequest.status === 200) {
+                    var data = JSON.parse(httpRequest.responseText);
+                    if (callback) callback(data);
+                }
+            }
+        };
+
+        httpRequest.open('GET', path);
+        httpRequest.send();
+    }
+
     function save_lf() {
         var xhr = new XMLHttpRequest();
-        xhr.open("GET", "/save", true);
+        xhr.open("GET", "/save-clockdisplays", true);
         xhr.send();
     }
 
@@ -702,7 +896,7 @@
         }
 
         var xhr = new XMLHttpRequest();
-        if (ssid != '' && wifipassword != '') {
+        if (ssid != '' && wifipassword != '' && wifipassword != '********') {
 
             xhr.open("GET", "/configuration?ssid=" + ssid + "&wifipassword=" + wifipassword + urlparams, false);
 
@@ -710,7 +904,7 @@
         }
 
         var xhr = new XMLHttpRequest();
-        xhr.open("GET", "/save", false);
+        xhr.open("GET", "/save-config", false);
         xhr.send();
 
         var xhr = new XMLHttpRequest();
@@ -718,27 +912,79 @@
         xhr.send();
     }
 
-    ons.ready(function () {
-        document.addEventListener('init', function (event) {
-            if (document.getElementById("autobrightness").checked == true) {
-                document.getElementById('brightness').disabled = true;
+    function save_schedule() {
+        var scheduleid = encodeURIComponent(document.getElementById('scheduleid').value);
+        var hour = encodeURIComponent(document.getElementById('hour').value);
+        var minute = encodeURIComponent(document.getElementById('minute').value);
+        var clockdisplay = encodeURIComponent(document.getElementById('scheduleclockdisplay').value);
+        var active;
+        if (document.getElementById("active").checked == true) {
+            active = 1;
+        } else {
+            active = 0;
+        }
+
+        document.getElementById('modal').show();
+
+        var xhr = new XMLHttpRequest();
+
+        xhr.open("GET", "/set-schedule?id=" + scheduleid + "&hour=" + hour + "&minute=" + minute + "&activeclockdisplay=" + clockdisplay + "&active=" + active, true);
+
+        xhr.onreadystatechange = function () {
+            if ((xhr.status == 200) && (xhr.readyState == 4)) {
+                hideDialog('schedule-dialog');
+                document.getElementById('modal').hide();
+                getschedules();
             }
+        };
 
-            document.getElementById("tz").value = '%tz%';
-            document.getElementById("activeclockdisplay").value = '%activeclockdisplay%';
+        xhr.send();
+    }
 
-        }, false);
+
+
+    ons.ready(function () {
+
+
 
         document.getElementById("activeclockdisplay").addEventListener('change', function () {
             var activeclockdisplay = encodeURIComponent(document.getElementById('activeclockdisplay').value);
 
             var xhr = new XMLHttpRequest();
-                xhr.open("GET", "/configuration?activeclockdisplay="+activeclockdisplay, true);
-                xhr.send();
-                location.reload();
+            xhr.open("GET", "/configuration?activeclockdisplay=" + activeclockdisplay, true);
+            xhr.send();
+
+            fetchJSONFile("/get-clockdisplay?id=" + activeclockdisplay + "&date=" + new Date().getTime(), function (data) {
+
+                backgroundColorPicker.color.hexString = data.bgc;
+                hourMarkColorPicker.color.hexString = data.hmc;
+                hourColorPicker.color.hexString = data.hc;
+                minuteColorPicker.color.hexString = data.mc;
+                secondColorPicker.color.hexString = data.sc;
+                if (data.ms == 1) {
+                    document.getElementById('showms').checked = true;
+                } else {
+                    document.getElementById('showms').checked = false;
+                }
+                if (data.s == 1) {
+                    document.getElementById('showseconds').checked = true;
+                } else {
+                    document.getElementById('showseconds').checked = false;
+                }
+                if (data.ab == 1) {
+                    document.getElementById('autobrightness').checked = true;
+                    document.getElementById('brightness').disabled = true;
+                } else {
+                    document.getElementById('autobrightness').checked = false;
+                    document.getElementById('brightness').disabled = false;
+                }
+
+                document.getElementById('brightness').value = data.bn;
+
+
             });
 
-        
+        });
 
         document.getElementById("showms").addEventListener('change', function () {
 
@@ -845,5 +1091,26 @@
             xhr.open("GET", "/color?secondcolor=" + hex, true);
             xhr.send();
         });
+
+
+        setTimeout(function () { //workaround.. intems in here do not work whitout this timeout
+            if (document.getElementById("autobrightness").checked == true) {
+                document.getElementById('brightness').disabled = true;
+            }
+
+            document.getElementById("tz").value = '%tz%';
+            document.getElementById("activeclockdisplay").value = '%activeclockdisplay%';
+
+            document.getElementById("scheduleid").addEventListener('change', function () {
+
+                getschedule();
+
+            });
+
+            getschedules();
+
+        }, 300);
+
+
     });
 </script>
