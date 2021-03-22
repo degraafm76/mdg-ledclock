@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <ESP8266WiFi.h>
 
 //Default HEX conversion strips leading zero's which we like to keep for use with the js colorpicker.
 String inttoHex(int num, int precision)
@@ -21,3 +22,20 @@ long hstol(String recv)
 	return strtol(c, NULL, 16);
 }
 
+
+String encryptionTypeStr(uint8_t authmode) {
+    switch(authmode) {
+        case ENC_TYPE_NONE:
+            return "NONE";
+        case ENC_TYPE_WEP:
+            return "WEP";
+        case ENC_TYPE_TKIP:
+            return "TKIP";
+        case ENC_TYPE_CCMP:
+            return "CCMP";
+        case ENC_TYPE_AUTO:
+            return "AUTO";
+        default:
+            return "?";
+    }
+}

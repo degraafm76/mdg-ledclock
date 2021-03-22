@@ -26,7 +26,6 @@
 // Min brightness
 #define MinBrightness 15
 
-//
 #define DATA_PIN 3
 
 #define LIGHTSENSORPIN A0 //Ambient light sensor reading
@@ -35,6 +34,9 @@
 #define EXE_INTERVAL_AUTO_BRIGHTNESS 5000
 unsigned long lastExecutedMillis = 0; // variable to save the last executed time
 unsigned long currentMillis;
+
+boolean apStopped = false;
+boolean wifiConnected = false;
 
 float lightReading;
 
@@ -48,6 +50,8 @@ float lightReading;
 String jsonConfigfile;
 String jsonSchedulefile;
 String jsonClkdisplaysfile;
+
+String responseSSID;
 
 struct Config
 {
@@ -216,6 +220,9 @@ void saveSchedules(const char *filename)
 		obj["acd"] = schedules[i].activeclockdisplay;
 		obj["h"] = schedules[i].hour;
 		obj["m"] = schedules[i].minute;
+		/* JsonArray levels = obj.createNestedArray("weekdays");
+		levels.add(1);
+		levels.add(2); */
 	}
 
 	// Serialize JSON to file
@@ -264,7 +271,6 @@ void saveConfiguration(const char *filename)
 
 	// Close the file
 	configfile.close();
-
 }
 
 void saveClockDisplays(const char *filename)
@@ -313,7 +319,6 @@ void saveClockDisplays(const char *filename)
 
 	// Close the file
 	configfile.close();
-
 }
 
 //Rotate clock display
@@ -326,6 +331,33 @@ int rotate(int nr)
 	else
 	{
 		return (nr + ROTATE_LEDS);
+	}
+}
+
+unsigned char bssid[6];
+int channel;
+int rssi = -999;
+
+void scanWifi(String ssid)
+{
+
+	byte numSsid = WiFi.scanNetworks();
+	rssi = -999;
+	for (int thisNet = 0; thisNet < numSsid; thisNet++)
+	{
+		//Serial.println(WiFi.SSID(thisNet));
+		if (WiFi.SSID(thisNet) == ssid)
+		{
+			Serial.println("found SSID: " + WiFi.SSID(thisNet));
+			Serial.println("rssi: " + String(WiFi.RSSI(thisNet)));
+			Serial.println("channel: " + String(WiFi.channel(thisNet)));
+			if (WiFi.RSSI(thisNet) > rssi)
+			{
+				memcpy(bssid, WiFi.BSSID(thisNet), 6);
+				channel = WiFi.channel(thisNet);
+				rssi = WiFi.RSSI(thisNet);
+			}
+		}
 	}
 }
 
@@ -369,6 +401,7 @@ void setup()
 		;
 	} // wait for Serial port to connect. Needed for native USB port only
 
+	Serial.println("----------------- [MDG Ledclock] ------------------");
 	// Initialize LittleFS
 	if (!LittleFS.begin())
 	{
@@ -392,7 +425,7 @@ void setup()
 	// Deserialize the JSON document
 	DeserializationError error_config = deserializeJson(config_doc, jsonConfigfile);
 	if (error_config)
-		Serial.println(F("Failed to read schedule file, using default configuration"));
+		Serial.println(F("Failed to read config.json file, using default configuration"));
 
 	configfile.close(); //close file
 
@@ -412,7 +445,7 @@ void setup()
 	// Deserialize the JSON document
 	DeserializationError error_schedule = deserializeJson(schedule_doc, jsonSchedulefile);
 	if (error_schedule)
-		Serial.println(F("Failed to read schedule file, using default configuration"));
+		Serial.println(F("Failed to read schedule.json file, using default configuration"));
 
 	schedulefile.close(); //close file
 
@@ -429,7 +462,7 @@ void setup()
 
 	if (!clkdisplaysfile)
 	{
-		Serial.println("Config file open failed");
+		Serial.println("Clock display file open failed");
 	}
 
 	// Allocate a temporary JsonDocument
@@ -442,7 +475,7 @@ void setup()
 	// Deserialize the JSON document
 	DeserializationError error_clkdisplays = deserializeJson(clkdisplays_doc, jsonClkdisplaysfile);
 	if (error_clkdisplays)
-		Serial.println(F("Failed to read file, using default configuration"));
+		Serial.println(F("Failed to read file clkdisplays.json, using default configuration"));
 
 	clkdisplaysfile.close(); //close file
 
@@ -468,17 +501,10 @@ void setup()
 	strlcpy(config.wifipassword, config_doc["wp"] | "", sizeof(config.wifipassword));
 	strlcpy(config.hostname, config_doc["hn"] | "ledclock", sizeof(config.hostname));
 
-	Serial.println("<<<<<< Clock configuration >>>>>>>");
-	Serial.println("Background HEX color: " + inttoHex(clockdisplays[config.activeclockdisplay].backgroundColor, 6));
-	Serial.println("Hour mark HEX color: " + inttoHex(clockdisplays[config.activeclockdisplay].hourMarkColor, 6));
-	Serial.println("Show ms led: " + String(clockdisplays[config.activeclockdisplay].showms));
-	Serial.println("Timezone: " + String(config.tz));
-	Serial.println("ssid: " + String(config.ssid));
-	Serial.println("hostname: " + String(config.hostname));
-
-	Serial.println(jsonSchedulefile);
+	/*
+	Serial.println(jsonSchedulefile); 	
 	Serial.println(jsonConfigfile);
-	Serial.println(jsonClkdisplaysfile);
+	Serial.println(jsonClkdisplaysfile); */
 
 	FastLED.setBrightness(128);
 	FastLED.setMaxPowerInVoltsAndMilliamps(5, 1000); //max 1 amperé power usage
@@ -488,35 +514,70 @@ void setup()
 		.setCorrection(0xE6E0E6);
 	FastLED.setMaxRefreshRate(400);
 
-	WiFi.mode(WIFI_STA);
+	WiFi.mode(WIFI_AP_STA);
 
 	WiFi.hostname(config.hostname);
-	WiFi.begin(config.ssid, config.wifipassword);
+
+	scanWifi(config.ssid);
+
+	if (rssi != -999) //connect to strongest ap
+	{
+		WiFi.begin(config.ssid, config.wifipassword, channel);
+		//Serial.println("Connected to channel: " + String(channel));
+	}
+	else
+	{
+		WiFi.begin(config.ssid, config.wifipassword);
+	}
 
 	// Uncomment the line below to see what it does behind the scenes
 	//setDebug(INFO);
 	if (checkConnection())
 	{
+		wifiConnected = true;
 		//When there is a wifi connection get time from NTP
 		waitForSync();
-
-		Serial.println("UTC: " + UTC.dateTime());
-
-		if (!MDNS.begin(config.hostname))
-		{ // Start the mDNS responder for esp8266.local
-			Serial.println("Error setting up MDNS responder!");
-		}
-		else
-		{
-			Serial.println("mDNS responder started");
-		}
 	}
 	else
 	{
-		WiFi.disconnect();
-		Serial.println("starting AP");
-		//default IP = 192.168.4.1
-		WiFi.softAP("Ledclock", "letmein!");
+		wifiConnected = false;
+
+		//WiFi.disconnect();
+
+		//WiFi.softAPdisconnect (true); //Disconnect softAP
+	}
+
+	byte mac[6];
+
+	WiFi.macAddress(mac);
+
+	Serial.println("----------------- [Information] ------------------");
+	Serial.print("MAC address: ");
+	Serial.println(WiFi.macAddress());
+	String apPassword = String(mac[5], HEX) + String(mac[4], HEX) + String(mac[3], HEX) + String(mac[2] + mac[5], HEX);
+	Serial.println("AP Password: " + apPassword);
+	Serial.println("Hostname: " + String(config.hostname));
+	Serial.println("SSID: " + WiFi.SSID());
+	Serial.println("rssi: " + String(WiFi.RSSI()));
+	Serial.println("Channel: " + String(channel));
+	Serial.println("IP Address: " + WiFi.localIP().toString());
+
+	//Serial.println("starting AP");
+	//default IP = 192.168.4.1
+	//WiFi.mode(WIFI_AP);
+
+	if (wifiConnected == true)
+	{
+		WiFi.softAP("MDG-Ledclock1 " + WiFi.localIP().toString(), apPassword); //show ipadress when connected to wifi
+	}
+	else
+	{
+		WiFi.softAP("MDG-Ledclock1", apPassword);
+	}
+
+	if (!MDNS.begin(config.hostname))
+	{ // Start the mDNS responder for esp8266.local
+		Serial.println("Error setting up MDNS responder!");
 	}
 
 	// Provide official timezone names
@@ -524,7 +585,8 @@ void setup()
 	if (!tz.setCache(0))
 		tz.setLocation(config.tz);
 
-	Serial.println(String(config.tz) + ": " + tz.dateTime());
+	Serial.println("Time zone: " + String(config.tz));
+	Serial.println("---------------------------------------------------");
 
 	// Webserver
 	// Route for root / web page
@@ -543,6 +605,139 @@ void setup()
 
 		saveConfiguration("/config.json");
 		request->send(200, "text/plain", "OK");
+	});
+
+	server.on("/scan-networks", HTTP_GET, [](AsyncWebServerRequest *request) { //save config
+		Serial.println("** Scan Networks **");
+
+		WiFi.scanNetworksAsync([request](int numNetworks) {
+			DynamicJsonDocument data(2048);
+			int o = numNetworks;
+			int loops = 0;
+
+			if (numNetworks == 0)
+				Serial.println("no networks found");
+			else
+			{
+				// sort by RSSI
+				int indices[numNetworks];
+				int skip[numNetworks];
+
+				String ssid;
+
+				for (int i = 0; i < numNetworks; i++)
+				{
+					indices[i] = i;
+				}
+
+				// CONFIG
+				bool sortRSSI = true;	// sort aps by RSSI
+				bool removeDups = true; // remove dup aps ( forces sort )
+				bool printAPs = true;	// print found aps
+
+				bool printAPFound = false;	 // do home ap check
+				const char *homeAP = "MYAP"; // check for this ap on each scan
+				// --------
+
+				bool homeAPFound = false;
+
+				if (removeDups || sortRSSI)
+				{
+					for (int i = 0; i < numNetworks; i++)
+					{
+						for (int j = i + 1; j < numNetworks; j++)
+						{
+							if (WiFi.RSSI(indices[j]) > WiFi.RSSI(indices[i]))
+							{
+								loops++;
+								std::swap(indices[i], indices[j]);
+								std::swap(skip[i], skip[j]);
+							}
+						}
+					}
+				}
+
+				if (removeDups)
+				{
+					for (int i = 0; i < numNetworks; i++)
+					{
+						if (indices[i] == -1)
+						{
+							--o;
+							continue;
+						}
+						ssid = WiFi.SSID(indices[i]);
+						for (int j = i + 1; j < numNetworks; j++)
+						{
+							loops++;
+							if (ssid == WiFi.SSID(indices[j]))
+							{
+								indices[j] = -1;
+							}
+						}
+					}
+				}
+
+				//    Serial.println((String)loops);
+				Serial.print(o);
+				Serial.println(" networks found of " + (String)numNetworks);
+
+				Serial.println("00: (RSSI)[BSSID][hidden] SSID [channel] [encryption]");
+				for (int i = 0; i < numNetworks; ++i)
+				{
+					if (printAPFound && (WiFi.SSID(indices[i]) == homeAP))
+						homeAPFound = true;
+
+					if (printAPs && indices[i] != -1)
+					{
+
+						JsonObject obj = data.createNestedObject();
+						obj["i"] = i;
+						obj["ssid"] = WiFi.SSID(indices[i]);
+
+						// Print SSID and RSSI for each network found
+						Serial.printf("%02d", i + 1);
+						Serial.print(":");
+
+						Serial.print(" (");
+						Serial.print(WiFi.RSSI(indices[i]));
+						Serial.print(")");
+
+						Serial.print(" [");
+						Serial.print(WiFi.BSSIDstr(indices[i]));
+						Serial.print("]");
+
+						Serial.print(" [");
+						Serial.print((String)WiFi.isHidden(indices[i]));
+						Serial.print("]");
+
+						Serial.print(" " + WiFi.SSID(indices[i]));
+						// Serial.print((WiFi.encryptionType(indices[i]) == ENC_TYPE_NONE)?" ":"*");
+
+						Serial.print(" [");
+						Serial.printf("%02d", (int)WiFi.channel(indices[i]));
+						Serial.print("]");
+
+						Serial.print(" [");
+						Serial.print((String)encryptionTypeStr(WiFi.encryptionType(indices[i])));
+						Serial.print("]");
+
+						//      Serial.print(" WiFi index: " + (String)indices[i]);
+
+						Serial.println();
+					}
+					delay(10);
+				}
+				if (printAPFound && !homeAPFound)
+					Serial.println("HOME AP NOT FOUND");
+				Serial.println("");
+			}
+			String response;
+			serializeJson(data, response);
+			request->send(200, "application/json", response);
+			Serial.println(ESP.getFreeHeap());
+		});
+
 	});
 
 	server.on("/save-clockdisplays", HTTP_GET, [](AsyncWebServerRequest *request) { //save clockdisplays
@@ -617,6 +812,39 @@ void setup()
 		serializeJson(data, response);
 		request->send(200, "application/json", response);
 	});
+	server.on("/set-schedule", HTTP_GET, [](AsyncWebServerRequest *request) {
+		int paramsNr = request->params();
+
+		for (int i = 0; i < paramsNr; i++)
+		{
+			AsyncWebParameter *p = request->getParam(i);
+
+			if (p->name() == "id")
+			{
+				scheduleId = p->value().toInt();
+			}
+			else if (p->name() == "hour")
+			{
+				schedules[scheduleId].hour = p->value().toInt();
+				Serial.println(scheduleId);
+			}
+			else if (p->name() == "minute")
+			{
+				schedules[scheduleId].minute = p->value().toInt();
+			}
+			else if (p->name() == "active")
+			{
+				schedules[scheduleId].active = p->value().toInt();
+			}
+			else if (p->name() == "activeclockdisplay")
+			{
+				schedules[scheduleId].activeclockdisplay = p->value().toInt();
+			}
+		}
+		saveSchedules("/schedules.json");
+
+		request->send(200, "text/plain", "OK");
+	});
 	server.on("/reboot", HTTP_GET, [](AsyncWebServerRequest *request) { //reboot ESP
 		request->send(200, "text/plain", "OK");
 		delay(500);
@@ -654,39 +882,6 @@ void setup()
 		{
 			inputMessage = "No message sent";
 		}
-		request->send(200, "text/plain", "OK");
-	});
-	server.on("/set-schedule", HTTP_GET, [](AsyncWebServerRequest *request) {
-		int paramsNr = request->params();
-
-		for (int i = 0; i < paramsNr; i++)
-		{
-			AsyncWebParameter *p = request->getParam(i);
-
-			if (p->name() == "id")
-			{
-				scheduleId = p->value().toInt();
-			}
-			else if (p->name() == "hour")
-			{
-				schedules[scheduleId].hour = p->value().toInt();
-				Serial.println(scheduleId);
-			}
-			else if (p->name() == "minute")
-			{
-				schedules[scheduleId].minute = p->value().toInt();
-			}
-			else if (p->name() == "active")
-			{
-				schedules[scheduleId].active = p->value().toInt();
-			}
-			else if (p->name() == "activeclockdisplay")
-			{
-				schedules[scheduleId].activeclockdisplay = p->value().toInt();
-			}
-		}
-		saveSchedules("/schedules.json");
-
 		request->send(200, "text/plain", "OK");
 	});
 	server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -764,11 +959,21 @@ void setup()
 void loop()
 {
 
+	currentMillis = millis();
+
 	events();
 
 	AsyncElegantOTA.loop();
 
 	MDNS.update();
+
+	if (currentMillis > 300000 && apStopped == false && wifiConnected == true) //disable AP after 5 minutes but only when there is a Wi-Fi connection
+	{
+
+		WiFi.softAPdisconnect(true);
+		Serial.println("Stopping AP...");
+		apStopped = true;
+	}
 
 	//Process Schedule every new minute
 	if (currentMinute != tz.minute()) //check if a minute has passed
@@ -819,17 +1024,17 @@ void loop()
 	//Second hand
 	if (clockdisplays[config.activeclockdisplay].showseconds == 1)
 	{
-		
-		int msto255 = map(tz.ms(), 1, 1000, 0, 255);
+
+		/* int msto255 = map(tz.ms(), 1, 1000, 0, 255);
 		CRGB pixelColor1 = blend(clockdisplays[config.activeclockdisplay].secondColor, leds[rotate(tz.second() - 1)], msto255);
 		CRGB pixelColor2 = blend(leds[rotate(tz.second())], clockdisplays[config.activeclockdisplay].secondColor, msto255);
 
 		leds[rotate(tz.second())] = pixelColor2;
-		leds[rotate(tz.second() - 1)] = pixelColor1; 
+		leds[rotate(tz.second() - 1)] = pixelColor1;  */
 
 		//normal
 
-		//leds[rotate(tz.second())] = clockdisplays[config.activeclockdisplay].secondColor;
+		leds[rotate(tz.second())] = clockdisplays[config.activeclockdisplay].secondColor;
 	}
 
 	if (clockdisplays[config.activeclockdisplay].showms == 1)
@@ -839,8 +1044,6 @@ void loop()
 		//leds[rotate(ms)] = config.secondColor;
 		leds[rotate(ms)] = clockdisplays[config.activeclockdisplay].secondColor;
 	}
-
-	currentMillis = millis();
 
 	// Set Brightness
 	if (clockdisplays[config.activeclockdisplay].autobrightness == 1)
