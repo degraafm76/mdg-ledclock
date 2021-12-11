@@ -141,7 +141,7 @@
         <ons-page id="Tab2">
 
 
-            <ons-dialog style='margin-left: 10px;margin-right: 10px;' id="schedule-dialog" cancelable>
+            <ons-dialog mask-color='rgba(192,192,192,0.3)' style='margin-left: 10px;margin-right: 10px;' id="schedule-dialog" cancelable>
                 <ons-toolbar inline>
                     <div class="center" id="scheduletxt">
                         Schedule...
@@ -159,22 +159,22 @@
                         <select name="minute" id="minute"></select>
                     </div><br>
                     <div style='color:white'>Clock display:
-                    <select name="scheduleclockdisplay" id="scheduleclockdisplay">
-                        <option value="0">1</option>
-                        <option value="1">2</option>
-                        <option value="2">3</option>
-                        <option value="3">4</option>
-                        <option value="4">5</option>
-                        <option value="5">6</option>
-                        <option value="6">7</option>
-                        <option value="7">8</option>
-                    </select>
-                </div><br>
+                        <select name="scheduleclockdisplay" id="scheduleclockdisplay">
+                            <option value="0">1</option>
+                            <option value="1">2</option>
+                            <option value="2">3</option>
+                            <option value="3">4</option>
+                            <option value="4">5</option>
+                            <option value="5">6</option>
+                            <option value="6">7</option>
+                            <option value="7">8</option>
+                        </select>
+                    </div><br>
                     <div class="left">
                         <div style='color:white'>Active:</div>
-                    
-                    <ons-switch id="active"></ons-switch>
-                </div>
+
+                        <ons-switch id="active"></ons-switch>
+                    </div>
                     <p style="margin-top: 30px;">
                         <ons-button modifier="large" onclick="save_schedule()">Save</ons-button>
                     </p>
@@ -193,13 +193,19 @@
                     Wifi settings
                 </div>
                 <div class="content">
-                    <div style="text-align: center; margin-top: 30px;">
+                    <div style="text-align: center; margin-top: 10px;">
+                        <p>
+                        <div id="id02"></div>
+                        </p><br>
                         <p>
                             <ons-input id="ssid" modifier="material" placeholder="SSID" value="%ssid%"></ons-input>
                         </p>
                         <p>
                             <ons-input id="wifipassword" modifier="material" type="password" placeholder="WiFi password"
                                 value="%wifipassword%"></ons-input>
+                        </p>
+                        <p style="margin-top: 30px; text-align: center;">
+                            <ons-button onclick="getssid()">Scan Networks</ons-button>
                         </p>
                     </div>
                 </div>
@@ -211,8 +217,7 @@
                 <div class="content">
                     <div style="text-align: center; margin-top: 30px;">
                         <p>
-                            <ons-input id="hostname" modifier="material" placeholder="hostname" maxlength="16"
-                                value="%hostname%"></ons-input>
+                            <ons-input id="hostname" modifier="material" placeholder="hostname" maxlength="16" value="%hostname%"></ons-input>
                         </p>
                     </div>
                 </div>
@@ -803,7 +808,7 @@
                     m = arr[i].m;
                 }
 
-                out += '<ons-list-item onclick="selectSchedule(' + arr[i].i + ');" tappable>' + (arr[i].i + 1) + ' -&nbsp;&nbsp;Time: ' + arr[i].h + ':' + m + '&nbsp;&nbsp;Clock display: ' + (arr[i].acd+1) + '&nbsp;&nbsp;Active: ' + active + '</ons-list-item>';
+                out += '<ons-list-item onclick="selectSchedule(' + arr[i].i + ');" tappable>' + (arr[i].i + 1) + ' -&nbsp;&nbsp;Time: ' + arr[i].h + ':' + m + '&nbsp;&nbsp;Clock display: ' + (arr[i].acd + 1) + '&nbsp;&nbsp;Active: ' + active + '</ons-list-item>';
             }
 
             out += '</ons-list>';
@@ -836,9 +841,48 @@
         document.getElementById("scheduleid").value = id;
         getschedule();
         document.getElementById("scheduletxt").innerHTML = "";
-        document.getElementById("scheduletxt").innerHTML = "Schedule " + (id+1);
-        
+        document.getElementById("scheduletxt").innerHTML = "Schedule " + (id + 1);
+
         showScheduleDialog();
+    }
+
+    function getssid() {
+        var xmlhttp = new XMLHttpRequest();
+        var url = "/scan-networks";
+        document.getElementById("id02").innerHTML = "";
+        document.getElementById("id02").innerHTML += "Scanning for networks...";
+        document.getElementById("id02").innerHTML += "<ons-progress-circular indeterminate></ons-progress-circular>";
+        xmlhttp.onreadystatechange = function () {
+            if (this.readyState == 4 && this.status == 200) {
+                var myArr = JSON.parse(this.responseText);
+                myFunction(myArr);
+            }
+        };
+        xmlhttp.open("GET", url, true);
+        xmlhttp.send();
+
+        function myFunction(arr) {
+
+            var out = "";
+
+            out += '<ons-list>';
+            out += '<ons-list-header>Wifi networks found:&nbsp</ons-list-header>';
+            for (i = 0; i < arr.length; i++) {
+
+                out += '<ons-list-item onclick="set_ssid(\'' + arr[i].ssid + '\')" tappable>' + arr[i].ssid + '</ons-list-item>';
+            }
+
+            out += '</ons - list >';
+
+            document.getElementById("id02").innerHTML = "";
+            document.getElementById("id02").innerHTML = out;
+        }
+    }
+
+    function set_ssid(ssid) {
+        document.getElementById("ssid").value = ssid;
+        document.getElementById('wifipassword').value = "";
+        //document.getElementById("ssid").disabled = true;
     }
 
     function set_theme(themeindex) {
@@ -888,7 +932,7 @@
         var hostname = encodeURIComponent(document.getElementById('hostname').value);
         var urlparams = '';
 
-        if (hostname != 'ledclock') {
+        if (hostname != 'ledclock' && hostname !='') {
             urlparams = "&hostname=" + hostname;
         }
         if (tz != '') {
@@ -901,6 +945,10 @@
             xhr.open("GET", "/configuration?ssid=" + ssid + "&wifipassword=" + wifipassword + urlparams, false);
 
             xhr.send();
+        } else {
+            xhr.open("GET", "/configuration?"+ urlparams, false);
+
+xhr.send();
         }
 
         var xhr = new XMLHttpRequest();

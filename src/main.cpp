@@ -7,7 +7,7 @@
 
 #include <FastLED.h>
 
-//Webserver
+// Webserver
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <AsyncElegantOTA.h>
@@ -15,43 +15,46 @@
 
 #include "LittleFS.h" // LittleFS is declared
 
-// How many leds are in the clock?
-#define NUM_LEDS 60
+#include <PubSubClient.h>
+WiFiClient espClient;
 
-// rotate leds by this number. Led ring is connected upside down
-#define ROTATE_LEDS 30
+#define NUM_LEDS 60						  // How many leds are in the clock?
+#define ROTATE_LEDS 30					  // rotate leds by this number. Led ring is connected upside down
+#define MaxBrightness 255				  // Max brightness
+#define MinBrightness 15				  // Min brightness
+#define DATA_PIN 3						  // Neopixel datapin
+#define LIGHTSENSORPIN A0				  // Ambient light sensor reading
+#define EXE_INTERVAL_AUTO_BRIGHTNESS 5000 // Interval (ms) to check light sensor value
+#define CLOCK_DISPLAYS 8				  // Nr of user defined clock displays
+#define SCHEDULES 12					  // Nr of user defined schedules
 
-// Max brightness
-#define MaxBrightness 255
-// Min brightness
-#define MinBrightness 15
-
-#define DATA_PIN 3
-
-#define LIGHTSENSORPIN A0 //Ambient light sensor reading
-
-//Interval to check light sensor value
-#define EXE_INTERVAL_AUTO_BRIGHTNESS 5000
 unsigned long lastExecutedMillis = 0; // variable to save the last executed time
 unsigned long currentMillis;
-
 boolean apStopped = false;
 boolean wifiConnected = false;
-
 float lightReading;
 
-//Nr of user defined clock displays
-#define CLOCK_DISPLAYS 8
-
-//Nr of user defines schedules
-#define SCHEDULES 12
+// variables used to store the mqtt state, the brightness and the color of the light
+boolean hour_rgb_state = true;
+uint8_t hour_rgb_brightness = 100;
+uint8_t hour_rgb_red = 255;
+uint8_t hour_rgb_green = 255;
+uint8_t hour_rgb_blue = 255;
+boolean hourmarks_rgb_state = true;
+uint8_t hourmarks_rgb_brightness = 100;
+uint8_t hourmarks_rgb_red = 255;
+uint8_t hourmarks_rgb_green = 255;
+uint8_t hourmarks_rgb_blue = 255;
+boolean background_rgb_state = true;
+uint8_t background_rgb_brightness = 100;
+uint8_t background_rgb_red = 255;
+uint8_t background_rgb_green = 255;
+uint8_t background_rgb_blue = 255;
 
 // Config
 String jsonConfigfile;
 String jsonSchedulefile;
 String jsonClkdisplaysfile;
-
-String responseSSID;
 
 struct Config
 {
@@ -96,12 +99,11 @@ Config config; // <- global configuration object
 
 tmElements_t tm;
 
-// This is an array of leds.  One item for each led in the clock
-CRGB leds[NUM_LEDS];
+CRGB leds[NUM_LEDS]; // This is an array of leds.  One item for each led in the clock
 
 Timezone tz;
 
-///////////////////Webserver
+//Webserver
 int sliderBrightnessValue = 128;
 const char *PARAM_INPUT = "value";
 
@@ -389,6 +391,350 @@ boolean checkConnection()
 	return false;
 }
 
+const uint8_t MSG_BUFFER_SIZE = 20;
+char m_msg_buffer[MSG_BUFFER_SIZE];
+
+PubSubClient client(espClient);
+
+// function called to adapt the brightness and the color of the led
+void setHourColor(uint8_t p_red, uint8_t p_green, uint8_t p_blue)
+{
+	// convert the brightness in % (0-100%) into a digital value (0-255)
+	uint8_t brightness = map(hour_rgb_brightness, 0, 100, 0, 255);
+
+	p_red = map(p_red, 0, 255, 0, brightness);
+	p_green = map(p_green, 0, 255, 0, brightness);
+	p_blue = map(p_blue, 0, 255, 0, brightness);
+
+	long RGB = ((long)p_red << 16L) | ((long)p_green << 8L) | (long)p_blue;
+	clockdisplays[config.activeclockdisplay].hourColor = RGB;
+}
+void setBackgroundColor(uint8_t p_red, uint8_t p_green, uint8_t p_blue)
+{
+	// convert the brightness in % (0-100%) into a digital value (0-255)
+	uint8_t brightness = map(background_rgb_brightness, 0, 100, 0, 255);
+
+	p_red = map(p_red, 0, 255, 0, brightness);
+	p_green = map(p_green, 0, 255, 0, brightness);
+	p_blue = map(p_blue, 0, 255, 0, brightness);
+
+	long RGB = ((long)p_red << 16L) | ((long)p_green << 8L) | (long)p_blue;
+	clockdisplays[config.activeclockdisplay].backgroundColor = RGB;
+}
+void setHourmarksColor(uint8_t p_red, uint8_t p_green, uint8_t p_blue)
+{
+	// convert the brightness in % (0-100%) into a digital value (0-255)
+	uint8_t brightness = map(hourmarks_rgb_brightness, 0, 100, 0, 255);
+
+	p_red = map(p_red, 0, 255, 0, brightness);
+	p_green = map(p_green, 0, 255, 0, brightness);
+	p_blue = map(p_blue, 0, 255, 0, brightness);
+
+	long RGB = ((long)p_red << 16L) | ((long)p_green << 8L) | (long)p_blue;
+	clockdisplays[config.activeclockdisplay].hourMarkColor = RGB;
+}
+void publishRGBhourBrightness()
+{
+	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d", hour_rgb_brightness);
+	client.publish("ledclock/hour/brightness/status", m_msg_buffer, true);
+}
+void publishRGBhourColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
+{
+
+	//Serial.print ("send rgb");
+
+	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d,%d,%d", rgb_red, rgb_green, rgb_blue);
+
+	client.publish("ledclock/hour/rgb/status", m_msg_buffer, true);
+}
+void publishRGBbackgroundBrightness()
+{
+	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d", background_rgb_brightness);
+	client.publish("ledclock/background/brightness/status", m_msg_buffer, true);
+}
+void publishRGBbackgroundColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
+{
+
+	//Serial.print ("send rgb");
+
+	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d,%d,%d", rgb_red, rgb_green, rgb_blue);
+
+	client.publish("ledclock/background/rgb/status", m_msg_buffer, true);
+}
+void publishRGBbackgroundState()
+{
+	if (background_rgb_state)
+	{
+		client.publish("ledclock/background/rgb/light/status", "ON", true);
+	}
+	else
+	{
+		client.publish("ledclock/background/rgb/light/status", "OFF", true);
+	}
+}
+void publishRGBhourmarksBrightness()
+{
+	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d", hourmarks_rgb_brightness);
+	client.publish("ledclock/hourmarks/brightness/status", m_msg_buffer, true);
+}
+void publishRGBhourmarksColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
+{
+
+	//Serial.print ("send rgb");
+
+	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d,%d,%d", rgb_red, rgb_green, rgb_blue);
+
+	client.publish("ledclock/hourmarks/rgb/status", m_msg_buffer, true);
+}
+void publishRGBhourmarksState()
+{
+	if (hourmarks_rgb_state)
+	{
+		client.publish("ledclock/hourmarks/rgb/light/status", "ON", true);
+	}
+	else
+	{
+		client.publish("ledclock/hourmarks/rgb/light/status", "OFF", true);
+	}
+}
+
+void callback(char *p_topic, byte *p_payload, unsigned int p_length)
+{
+	String payload;
+	for (uint8_t i = 0; i < p_length; i++)
+	{
+		payload.concat((char)p_payload[i]);
+	}
+
+	if (String(p_topic) == "ledclock/hour/rgb/set")
+	{
+		// get the position of the first and second commas
+		uint8_t firstIndex = payload.indexOf(',');
+		uint8_t lastIndex = payload.lastIndexOf(',');
+
+		uint8_t rgb_red = payload.substring(0, firstIndex).toInt();
+		if (rgb_red < 0 || rgb_red > 255)
+		{
+			return;
+		}
+		else
+		{
+			hour_rgb_red = rgb_red;
+		}
+
+		uint8_t rgb_green = payload.substring(firstIndex + 1, lastIndex).toInt();
+		if (rgb_green < 0 || rgb_green > 255)
+		{
+			return;
+		}
+		else
+		{
+			hour_rgb_green = rgb_green;
+		}
+
+		uint8_t rgb_blue = payload.substring(lastIndex + 1).toInt();
+		if (rgb_blue < 0 || rgb_blue > 255)
+		{
+			return;
+		}
+		else
+		{
+			hour_rgb_blue = rgb_blue;
+		}
+		setHourColor(rgb_red, rgb_green, rgb_blue);
+		publishRGBhourColor(rgb_red, rgb_green, rgb_blue);
+	}
+
+	else if (String(p_topic) == "ledclock/background/rgb/set")
+	{
+		// get the position of the first and second commas
+		uint8_t firstIndex = payload.indexOf(',');
+		uint8_t lastIndex = payload.lastIndexOf(',');
+
+		uint8_t rgb_red = payload.substring(0, firstIndex).toInt();
+		if (rgb_red < 0 || rgb_red > 255)
+		{
+			return;
+		}
+		else
+		{
+			background_rgb_red = rgb_red;
+		}
+
+		uint8_t rgb_green = payload.substring(firstIndex + 1, lastIndex).toInt();
+		if (rgb_green < 0 || rgb_green > 255)
+		{
+			return;
+		}
+		else
+		{
+			background_rgb_green = rgb_green;
+		}
+
+		uint8_t rgb_blue = payload.substring(lastIndex + 1).toInt();
+		if (rgb_blue < 0 || rgb_blue > 255)
+		{
+			return;
+		}
+		else
+		{
+			background_rgb_blue = rgb_blue;
+		}
+		setBackgroundColor(rgb_red, rgb_green, rgb_blue);
+		publishRGBbackgroundColor(rgb_red, rgb_green, rgb_blue);
+	}
+	else if (String(p_topic) == "ledclock/hourmarks/rgb/set")
+	{
+		// get the position of the first and second commas
+		uint8_t firstIndex = payload.indexOf(',');
+		uint8_t lastIndex = payload.lastIndexOf(',');
+
+		uint8_t rgb_red = payload.substring(0, firstIndex).toInt();
+		if (rgb_red < 0 || rgb_red > 255)
+		{
+			return;
+		}
+		else
+		{
+			hourmarks_rgb_red = rgb_red;
+		}
+
+		uint8_t rgb_green = payload.substring(firstIndex + 1, lastIndex).toInt();
+		if (rgb_green < 0 || rgb_green > 255)
+		{
+			return;
+		}
+		else
+		{
+			hourmarks_rgb_green = rgb_green;
+		}
+
+		uint8_t rgb_blue = payload.substring(lastIndex + 1).toInt();
+		if (rgb_blue < 0 || rgb_blue > 255)
+		{
+			return;
+		}
+		else
+		{
+			hourmarks_rgb_blue = rgb_blue;
+		}
+		setHourmarksColor(rgb_red, rgb_green, rgb_blue);
+		publishRGBhourmarksColor(rgb_red, rgb_green, rgb_blue);
+	}
+	else if (String("ledclock/hour/brightness/set").equals(p_topic))
+	{
+		uint8_t brightness = payload.toInt();
+		if (brightness < 0 || brightness > 100)
+		{
+			// do nothing...
+			return;
+		}
+		else
+		{
+			hour_rgb_brightness = brightness;
+			setHourColor(hour_rgb_red, hour_rgb_green, hour_rgb_blue);
+			publishRGBhourBrightness();
+		}
+	}
+	else if (String("ledclock/background/brightness/set").equals(p_topic))
+	{
+		uint8_t brightness = payload.toInt();
+		if (brightness < 0 || brightness > 100)
+		{
+			// do nothing...
+			return;
+		}
+		else
+		{
+			background_rgb_brightness = brightness;
+			setBackgroundColor(background_rgb_red, background_rgb_green, background_rgb_blue);
+			publishRGBbackgroundBrightness();
+		}
+	}
+	else if (String("ledclock/hourmarks/brightness/set").equals(p_topic))
+	{
+		uint8_t brightness = payload.toInt();
+		if (brightness < 0 || brightness > 100)
+		{
+			// do nothing...
+			return;
+		}
+		else
+		{
+			hourmarks_rgb_brightness = brightness;
+			setHourmarksColor(hourmarks_rgb_red, hourmarks_rgb_green, hourmarks_rgb_blue);
+			publishRGBhourmarksBrightness();
+		}
+	}
+	else if (String("ledclock/background/rgb/light/switch").equals(p_topic))
+	{
+		// test if the payload is equal to "ON" or "OFF"
+		if (payload.equals(String("ON")))
+		{
+			if (background_rgb_state != true)
+			{
+				background_rgb_state = true;
+				setBackgroundColor(background_rgb_red, background_rgb_green, background_rgb_blue);
+				publishRGBbackgroundState();
+			}
+		}
+		else if (payload.equals(String("OFF")))
+		{
+			if (background_rgb_state != false)
+			{
+				background_rgb_state = false;
+				setBackgroundColor(0, 0, 0);
+				publishRGBbackgroundState();
+			}
+		}
+	}
+	else if (String("ledclock/hourmarks/rgb/light/switch").equals(p_topic))
+	{
+		// test if the payload is equal to "ON" or "OFF"
+		if (payload.equals(String("ON")))
+		{
+			if (hourmarks_rgb_state != true)
+			{
+				hourmarks_rgb_state = true;
+				publishRGBhourmarksState();
+			}
+		}
+		else if (payload.equals(String("OFF")))
+		{
+			if (hourmarks_rgb_state != false)
+			{
+				hourmarks_rgb_state = false;
+				publishRGBhourmarksState();
+			}
+		}
+	}
+}
+
+void reconnect()
+{
+	// Loop until we're reconnected
+	while (!client.connected())
+	{
+		Serial.println("INFO: Attempting MQTT connection...");
+		// Attempt to connect
+		if (client.connect("Ledclock", "admin", "44s8BA4H"))
+		{
+			Serial.println("INFO: connected");
+
+			client.publish("ledclock/status", "ON");
+			client.subscribe("ledclock/#");
+		}
+		else
+		{
+			Serial.print("ERROR: failed, rc=");
+			Serial.print(client.state());
+			Serial.println("DEBUG: try again in 5 seconds");
+			// Wait 5 seconds before retrying
+			delay(5000);
+		}
+	}
+}
+
 void setup()
 {
 
@@ -507,11 +853,11 @@ void setup()
 	Serial.println(jsonClkdisplaysfile); */
 
 	FastLED.setBrightness(128);
-	FastLED.setMaxPowerInVoltsAndMilliamps(5, 1000); //max 1 amperé power usage
+	FastLED.setMaxPowerInVoltsAndMilliamps(5, 1000); //max 1 amp power usage
 
 	FastLED.addLeds<SK6812, DATA_PIN, GRB>(leds, NUM_LEDS) // GRB ordering is typical
-		//	.setCorrection(TypicalLEDStrip);
-		.setCorrection(0xE6E0E6);
+														   //.setCorrection(TypicalLEDStrip);
+		.setCorrection(0xFFFFFF);						   //No correction
 	FastLED.setMaxRefreshRate(400);
 
 	WiFi.mode(WIFI_AP_STA);
@@ -580,6 +926,9 @@ void setup()
 		Serial.println("Error setting up MDNS responder!");
 	}
 
+	client.setServer("hass.powerkite.nl", 1883);
+	client.setCallback(callback);
+
 	// Provide official timezone names
 	// https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 	if (!tz.setCache(0))
@@ -590,10 +939,11 @@ void setup()
 
 	// Webserver
 	// Route for root / web page
-	server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-		//request->send_P(200, "text/html", index_html, processor);
-		request->send(LittleFS, "/index.htm", String(), false, processor);
-	});
+	server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+			  {
+				  //request->send_P(200, "text/html", index_html, processor);
+				  request->send(LittleFS, "/index.htm", String(), false, processor);
+			  });
 	server.serveStatic("/mdg-ledr.js", LittleFS, "/mdg-ledr.js", "max-age=31536000");
 	server.serveStatic("/mdg-ledr.css", LittleFS, "mdg-ledr.css", "max-age=31536000");
 	server.serveStatic("/mdi-font.ttf", LittleFS, "/mdi-font.ttf", "max-age=31536000");
@@ -610,133 +960,134 @@ void setup()
 	server.on("/scan-networks", HTTP_GET, [](AsyncWebServerRequest *request) { //save config
 		Serial.println("** Scan Networks **");
 
-		WiFi.scanNetworksAsync([request](int numNetworks) {
-			DynamicJsonDocument data(2048);
-			int o = numNetworks;
-			int loops = 0;
+		WiFi.scanNetworksAsync([request](int numNetworks)
+							   {
+								   DynamicJsonDocument data(2048);
+								   int o = numNetworks;
+								   int loops = 0;
 
-			if (numNetworks == 0)
-				Serial.println("no networks found");
-			else
-			{
-				// sort by RSSI
-				int indices[numNetworks];
-				int skip[numNetworks];
+								   if (numNetworks == 0)
+									   Serial.println("no networks found");
+								   else
+								   {
+									   // sort by RSSI
+									   int indices[numNetworks];
+									   int skip[numNetworks];
 
-				String ssid;
+									   String ssid;
 
-				for (int i = 0; i < numNetworks; i++)
-				{
-					indices[i] = i;
-				}
+									   for (int i = 0; i < numNetworks; i++)
+									   {
+										   indices[i] = i;
+									   }
 
-				// CONFIG
-				bool sortRSSI = true;	// sort aps by RSSI
-				bool removeDups = true; // remove dup aps ( forces sort )
-				bool printAPs = true;	// print found aps
+									   // CONFIG
+									   bool sortRSSI = true;   // sort aps by RSSI
+									   bool removeDups = true; // remove dup aps ( forces sort )
+									   bool printAPs = true;   // print found aps
 
-				bool printAPFound = false;	 // do home ap check
-				const char *homeAP = "MYAP"; // check for this ap on each scan
-				// --------
+									   bool printAPFound = false;	// do home ap check
+									   const char *homeAP = "MYAP"; // check for this ap on each scan
+									   // --------
 
-				bool homeAPFound = false;
+									   bool homeAPFound = false;
 
-				if (removeDups || sortRSSI)
-				{
-					for (int i = 0; i < numNetworks; i++)
-					{
-						for (int j = i + 1; j < numNetworks; j++)
-						{
-							if (WiFi.RSSI(indices[j]) > WiFi.RSSI(indices[i]))
-							{
-								loops++;
-								std::swap(indices[i], indices[j]);
-								std::swap(skip[i], skip[j]);
-							}
-						}
-					}
-				}
+									   if (removeDups || sortRSSI)
+									   {
+										   for (int i = 0; i < numNetworks; i++)
+										   {
+											   for (int j = i + 1; j < numNetworks; j++)
+											   {
+												   if (WiFi.RSSI(indices[j]) > WiFi.RSSI(indices[i]))
+												   {
+													   loops++;
+													   std::swap(indices[i], indices[j]);
+													   std::swap(skip[i], skip[j]);
+												   }
+											   }
+										   }
+									   }
 
-				if (removeDups)
-				{
-					for (int i = 0; i < numNetworks; i++)
-					{
-						if (indices[i] == -1)
-						{
-							--o;
-							continue;
-						}
-						ssid = WiFi.SSID(indices[i]);
-						for (int j = i + 1; j < numNetworks; j++)
-						{
-							loops++;
-							if (ssid == WiFi.SSID(indices[j]))
-							{
-								indices[j] = -1;
-							}
-						}
-					}
-				}
+									   if (removeDups)
+									   {
+										   for (int i = 0; i < numNetworks; i++)
+										   {
+											   if (indices[i] == -1)
+											   {
+												   --o;
+												   continue;
+											   }
+											   ssid = WiFi.SSID(indices[i]);
+											   for (int j = i + 1; j < numNetworks; j++)
+											   {
+												   loops++;
+												   if (ssid == WiFi.SSID(indices[j]))
+												   {
+													   indices[j] = -1;
+												   }
+											   }
+										   }
+									   }
 
-				//    Serial.println((String)loops);
-				Serial.print(o);
-				Serial.println(" networks found of " + (String)numNetworks);
+									   //    Serial.println((String)loops);
+									   Serial.print(o);
+									   Serial.println(" networks found of " + (String)numNetworks);
 
-				Serial.println("00: (RSSI)[BSSID][hidden] SSID [channel] [encryption]");
-				for (int i = 0; i < numNetworks; ++i)
-				{
-					if (printAPFound && (WiFi.SSID(indices[i]) == homeAP))
-						homeAPFound = true;
+									   Serial.println("00: (RSSI)[BSSID][hidden] SSID [channel] [encryption]");
+									   for (int i = 0; i < numNetworks; ++i)
+									   {
+										   if (printAPFound && (WiFi.SSID(indices[i]) == homeAP))
+											   homeAPFound = true;
 
-					if (printAPs && indices[i] != -1)
-					{
+										   if (printAPs && indices[i] != -1)
+										   {
 
-						JsonObject obj = data.createNestedObject();
-						obj["i"] = i;
-						obj["ssid"] = WiFi.SSID(indices[i]);
+											   JsonObject obj = data.createNestedObject();
+											   //obj["i"] = i;
+											   obj["ssid"] = WiFi.SSID(indices[i]);
 
-						// Print SSID and RSSI for each network found
-						Serial.printf("%02d", i + 1);
-						Serial.print(":");
+											   // Print SSID and RSSI for each network found
+											   Serial.printf("%02d", i + 1);
+											   Serial.print(":");
 
-						Serial.print(" (");
-						Serial.print(WiFi.RSSI(indices[i]));
-						Serial.print(")");
+											   Serial.print(" (");
+											   Serial.print(WiFi.RSSI(indices[i]));
+											   Serial.print(")");
 
-						Serial.print(" [");
-						Serial.print(WiFi.BSSIDstr(indices[i]));
-						Serial.print("]");
+											   Serial.print(" [");
+											   Serial.print(WiFi.BSSIDstr(indices[i]));
+											   Serial.print("]");
 
-						Serial.print(" [");
-						Serial.print((String)WiFi.isHidden(indices[i]));
-						Serial.print("]");
+											   Serial.print(" [");
+											   Serial.print((String)WiFi.isHidden(indices[i]));
+											   Serial.print("]");
 
-						Serial.print(" " + WiFi.SSID(indices[i]));
-						// Serial.print((WiFi.encryptionType(indices[i]) == ENC_TYPE_NONE)?" ":"*");
+											   Serial.print(" " + WiFi.SSID(indices[i]));
+											   // Serial.print((WiFi.encryptionType(indices[i]) == ENC_TYPE_NONE)?" ":"*");
 
-						Serial.print(" [");
-						Serial.printf("%02d", (int)WiFi.channel(indices[i]));
-						Serial.print("]");
+											   Serial.print(" [");
+											   Serial.printf("%02d", (int)WiFi.channel(indices[i]));
+											   Serial.print("]");
 
-						Serial.print(" [");
-						Serial.print((String)encryptionTypeStr(WiFi.encryptionType(indices[i])));
-						Serial.print("]");
+											   Serial.print(" [");
+											   Serial.print((String)encryptionTypeStr(WiFi.encryptionType(indices[i])));
+											   Serial.print("]");
 
-						//      Serial.print(" WiFi index: " + (String)indices[i]);
+											   //      Serial.print(" WiFi index: " + (String)indices[i]);
 
-						Serial.println();
-					}
-					delay(10);
-				}
-				if (printAPFound && !homeAPFound)
-					Serial.println("HOME AP NOT FOUND");
-				Serial.println("");
-			}
-			String response;
-			serializeJson(data, response);
-			request->send(200, "application/json", response);
-			Serial.println(ESP.getFreeHeap());
-		});
+											   Serial.println();
+										   }
+										   delay(10);
+									   }
+									   if (printAPFound && !homeAPFound)
+										   Serial.println("HOME AP NOT FOUND");
+									   Serial.println("");
+								   }
+								   String response;
+								   serializeJson(data, response);
+								   request->send(200, "application/json", response);
+								   Serial.println(ESP.getFreeHeap());
+							   });
 
 	});
 
@@ -744,208 +1095,214 @@ void setup()
 		saveClockDisplays("/clkdisplays.json");
 		request->send(200, "text/plain", "OK");
 	});
-	server.on("/get-clockdisplay", HTTP_GET, [](AsyncWebServerRequest *request) {
-		StaticJsonDocument<256> data;
-		if (request->hasParam("id"))
-		{
-			int i = (request->getParam("id")->value()).toInt();
+	server.on("/get-clockdisplay", HTTP_GET, [](AsyncWebServerRequest *request)
+			  {
+				  StaticJsonDocument<256> data;
+				  if (request->hasParam("id"))
+				  {
+					  int i = (request->getParam("id")->value()).toInt();
 
-			data["bgc"] = String(inttoHex(clockdisplays[i].backgroundColor, 6));
-			data["hmc"] = String(inttoHex(clockdisplays[i].hourMarkColor, 6));
-			data["hc"] = String(inttoHex(clockdisplays[i].hourColor, 6));
-			data["mc"] = String(inttoHex(clockdisplays[i].minuteColor, 6));
-			data["sc"] = String(inttoHex(clockdisplays[i].secondColor, 6));
-			data["ms"] = clockdisplays[i].showms;
-			data["s"] = clockdisplays[i].showseconds;
-			data["ab"] = clockdisplays[i].autobrightness;
-			data["bn"] = clockdisplays[i].brightness;
-			data["rb"] = clockdisplays[i].rainbowgb;
-		}
-		else
-		{
-			data["message"] = "No clockdisplay id";
-		}
-		String response;
-		serializeJson(data, response);
-		request->send(200, "application/json", response);
-	});
-	server.on("/get-schedule", HTTP_GET, [](AsyncWebServerRequest *request) {
-		StaticJsonDocument<256> data;
-		if (request->hasParam("id"))
-		{
+					  data["bgc"] = String(inttoHex(clockdisplays[i].backgroundColor, 6));
+					  data["hmc"] = String(inttoHex(clockdisplays[i].hourMarkColor, 6));
+					  data["hc"] = String(inttoHex(clockdisplays[i].hourColor, 6));
+					  data["mc"] = String(inttoHex(clockdisplays[i].minuteColor, 6));
+					  data["sc"] = String(inttoHex(clockdisplays[i].secondColor, 6));
+					  data["ms"] = clockdisplays[i].showms;
+					  data["s"] = clockdisplays[i].showseconds;
+					  data["ab"] = clockdisplays[i].autobrightness;
+					  data["bn"] = clockdisplays[i].brightness;
+					  data["rb"] = clockdisplays[i].rainbowgb;
+				  }
+				  else
+				  {
+					  data["message"] = "No clockdisplay id";
+				  }
+				  String response;
+				  serializeJson(data, response);
+				  request->send(200, "application/json", response);
+			  });
+	server.on("/get-schedule", HTTP_GET, [](AsyncWebServerRequest *request)
+			  {
+				  StaticJsonDocument<256> data;
+				  if (request->hasParam("id"))
+				  {
 
-			int i = (request->getParam("id")->value()).toInt();
-			if (i <= SCHEDULES)
-			{
-				data["a"] = schedules[i].active;
-				data["acd"] = schedules[i].activeclockdisplay;
-				data["h"] = schedules[i].hour;
-				data["m"] = schedules[i].minute;
-			}
-			else
-			{
-				data["message"] = "Schedule not found";
-			}
-		}
-		else
-		{
-			data["message"] = "No Schedule id";
-		}
-		String response;
-		serializeJson(data, response);
-		request->send(200, "application/json", response);
-	});
-	server.on("/get-schedules", HTTP_GET, [](AsyncWebServerRequest *request) {
-		StaticJsonDocument<1536> data;
+					  int i = (request->getParam("id")->value()).toInt();
+					  if (i <= SCHEDULES)
+					  {
+						  data["a"] = schedules[i].active;
+						  data["acd"] = schedules[i].activeclockdisplay;
+						  data["h"] = schedules[i].hour;
+						  data["m"] = schedules[i].minute;
+					  }
+					  else
+					  {
+						  data["message"] = "Schedule not found";
+					  }
+				  }
+				  else
+				  {
+					  data["message"] = "No Schedule id";
+				  }
+				  String response;
+				  serializeJson(data, response);
+				  request->send(200, "application/json", response);
+			  });
+	server.on("/get-schedules", HTTP_GET, [](AsyncWebServerRequest *request)
+			  {
+				  StaticJsonDocument<1536> data;
 
-		for (int i = 0; i <= SCHEDULES - 1; i++)
-		{
-			JsonObject obj = data.createNestedObject();
-			obj["i"] = i;
-			obj["a"] = schedules[i].active;
-			obj["acd"] = schedules[i].activeclockdisplay;
-			obj["h"] = schedules[i].hour;
-			obj["m"] = schedules[i].minute;
-		}
+				  for (int i = 0; i <= SCHEDULES - 1; i++)
+				  {
+					  JsonObject obj = data.createNestedObject();
+					  obj["i"] = i;
+					  obj["a"] = schedules[i].active;
+					  obj["acd"] = schedules[i].activeclockdisplay;
+					  obj["h"] = schedules[i].hour;
+					  obj["m"] = schedules[i].minute;
+				  }
 
-		String response;
-		serializeJson(data, response);
-		request->send(200, "application/json", response);
-	});
-	server.on("/set-schedule", HTTP_GET, [](AsyncWebServerRequest *request) {
-		int paramsNr = request->params();
+				  String response;
+				  serializeJson(data, response);
+				  request->send(200, "application/json", response);
+			  });
+	server.on("/set-schedule", HTTP_GET, [](AsyncWebServerRequest *request)
+			  {
+				  int paramsNr = request->params();
 
-		for (int i = 0; i < paramsNr; i++)
-		{
-			AsyncWebParameter *p = request->getParam(i);
+				  for (int i = 0; i < paramsNr; i++)
+				  {
+					  AsyncWebParameter *p = request->getParam(i);
 
-			if (p->name() == "id")
-			{
-				scheduleId = p->value().toInt();
-			}
-			else if (p->name() == "hour")
-			{
-				schedules[scheduleId].hour = p->value().toInt();
-				Serial.println(scheduleId);
-			}
-			else if (p->name() == "minute")
-			{
-				schedules[scheduleId].minute = p->value().toInt();
-			}
-			else if (p->name() == "active")
-			{
-				schedules[scheduleId].active = p->value().toInt();
-			}
-			else if (p->name() == "activeclockdisplay")
-			{
-				schedules[scheduleId].activeclockdisplay = p->value().toInt();
-			}
-		}
-		saveSchedules("/schedules.json");
+					  if (p->name() == "id")
+					  {
+						  scheduleId = p->value().toInt();
+					  }
+					  else if (p->name() == "hour")
+					  {
+						  schedules[scheduleId].hour = p->value().toInt();
+						  Serial.println(scheduleId);
+					  }
+					  else if (p->name() == "minute")
+					  {
+						  schedules[scheduleId].minute = p->value().toInt();
+					  }
+					  else if (p->name() == "active")
+					  {
+						  schedules[scheduleId].active = p->value().toInt();
+					  }
+					  else if (p->name() == "activeclockdisplay")
+					  {
+						  schedules[scheduleId].activeclockdisplay = p->value().toInt();
+					  }
+				  }
+				  saveSchedules("/schedules.json");
 
-		request->send(200, "text/plain", "OK");
-	});
+				  request->send(200, "text/plain", "OK");
+			  });
 	server.on("/reboot", HTTP_GET, [](AsyncWebServerRequest *request) { //reboot ESP
 		request->send(200, "text/plain", "OK");
 		delay(500);
 		ESP.restart();
 	});
-	server.on("/color", HTTP_GET, [](AsyncWebServerRequest *request) {
-		String inputMessage;
+	server.on("/color", HTTP_GET, [](AsyncWebServerRequest *request)
+			  {
+				  String inputMessage;
 
-		if (request->hasParam("hourcolor"))
-		{
-			inputMessage = request->getParam("hourcolor")->value();
-			clockdisplays[config.activeclockdisplay].hourColor = hstol(inputMessage);
-		}
-		else if (request->hasParam("minutecolor"))
-		{
-			inputMessage = request->getParam("minutecolor")->value();
-			clockdisplays[config.activeclockdisplay].minuteColor = hstol(inputMessage);
-		}
-		else if (request->hasParam("secondcolor"))
-		{
-			inputMessage = request->getParam("secondcolor")->value();
-			clockdisplays[config.activeclockdisplay].secondColor = hstol(inputMessage);
-		}
-		else if (request->hasParam("backgroundcolor"))
-		{
-			inputMessage = request->getParam("backgroundcolor")->value();
-			clockdisplays[config.activeclockdisplay].backgroundColor = hstol(inputMessage);
-		}
-		else if (request->hasParam("hourmarkcolor"))
-		{
-			inputMessage = request->getParam("hourmarkcolor")->value();
-			clockdisplays[config.activeclockdisplay].hourMarkColor = hstol(inputMessage);
-		}
-		else
-		{
-			inputMessage = "No message sent";
-		}
-		request->send(200, "text/plain", "OK");
-	});
-	server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request) {
-		int paramsNr = request->params();
+				  if (request->hasParam("hourcolor"))
+				  {
+					  inputMessage = request->getParam("hourcolor")->value();
+					  clockdisplays[config.activeclockdisplay].hourColor = hstol(inputMessage);
+				  }
+				  else if (request->hasParam("minutecolor"))
+				  {
+					  inputMessage = request->getParam("minutecolor")->value();
+					  clockdisplays[config.activeclockdisplay].minuteColor = hstol(inputMessage);
+				  }
+				  else if (request->hasParam("secondcolor"))
+				  {
+					  inputMessage = request->getParam("secondcolor")->value();
+					  clockdisplays[config.activeclockdisplay].secondColor = hstol(inputMessage);
+				  }
+				  else if (request->hasParam("backgroundcolor"))
+				  {
+					  inputMessage = request->getParam("backgroundcolor")->value();
+					  clockdisplays[config.activeclockdisplay].backgroundColor = hstol(inputMessage);
+				  }
+				  else if (request->hasParam("hourmarkcolor"))
+				  {
+					  inputMessage = request->getParam("hourmarkcolor")->value();
+					  clockdisplays[config.activeclockdisplay].hourMarkColor = hstol(inputMessage);
+				  }
+				  else
+				  {
+					  inputMessage = "No message sent";
+				  }
+				  request->send(200, "text/plain", "OK");
+			  });
+	server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request)
+			  {
+				  int paramsNr = request->params();
 
-		for (int i = 0; i < paramsNr; i++)
-		{
-			AsyncWebParameter *p = request->getParam(i);
+				  for (int i = 0; i < paramsNr; i++)
+				  {
+					  AsyncWebParameter *p = request->getParam(i);
 
-			if (p->name() == "brightness")
-			{
-				if (clockdisplays[config.activeclockdisplay].autobrightness == 0)
-				{
-					clockdisplays[config.activeclockdisplay].brightness = p->value().toInt();
+					  if (p->name() == "brightness")
+					  {
+						  if (clockdisplays[config.activeclockdisplay].autobrightness == 0)
+						  {
+							  clockdisplays[config.activeclockdisplay].brightness = p->value().toInt();
 
-					int NumtToBrightness = map(clockdisplays[config.activeclockdisplay].brightness, 0, 255, MinBrightness, MaxBrightness);
-					FastLED.setBrightness(NumtToBrightness);
-				}
-			}
-			else if (p->name() == "showms")
-			{
-				clockdisplays[config.activeclockdisplay].showms = p->value().toInt();
-			}
-			else if (p->name() == "activeclockdisplay")
-			{
-				config.activeclockdisplay = p->value().toInt();
-			}
-			else if (p->name() == "showseconds")
-			{
-				clockdisplays[config.activeclockdisplay].showseconds = p->value().toInt();
-			}
-			else if (p->name() == "autobrightness")
-			{
-				clockdisplays[config.activeclockdisplay].autobrightness = p->value().toInt();
-			}
-			else if (p->name() == "rainbowbg")
-			{
-				clockdisplays[config.activeclockdisplay].rainbowgb = p->value().toInt();
-			}
-			else if (p->name() == "ssid")
-			{
+							  int NumtToBrightness = map(clockdisplays[config.activeclockdisplay].brightness, 0, 255, MinBrightness, MaxBrightness);
+							  FastLED.setBrightness(NumtToBrightness);
+						  }
+					  }
+					  else if (p->name() == "showms")
+					  {
+						  clockdisplays[config.activeclockdisplay].showms = p->value().toInt();
+					  }
+					  else if (p->name() == "activeclockdisplay")
+					  {
+						  config.activeclockdisplay = p->value().toInt();
+					  }
+					  else if (p->name() == "showseconds")
+					  {
+						  clockdisplays[config.activeclockdisplay].showseconds = p->value().toInt();
+					  }
+					  else if (p->name() == "autobrightness")
+					  {
+						  clockdisplays[config.activeclockdisplay].autobrightness = p->value().toInt();
+					  }
+					  else if (p->name() == "rainbowbg")
+					  {
+						  clockdisplays[config.activeclockdisplay].rainbowgb = p->value().toInt();
+					  }
+					  else if (p->name() == "ssid")
+					  {
 
-				p->value().toCharArray(config.ssid, sizeof(config.ssid));
-			}
-			else if (p->name() == "wifipassword")
-			{
+						  p->value().toCharArray(config.ssid, sizeof(config.ssid));
+					  }
+					  else if (p->name() == "wifipassword")
+					  {
 
-				p->value().toCharArray(config.wifipassword, sizeof(config.wifipassword));
-			}
-			else if (p->name() == "hostname")
-			{
+						  p->value().toCharArray(config.wifipassword, sizeof(config.wifipassword));
+					  }
+					  else if (p->name() == "hostname")
+					  {
 
-				p->value().toCharArray(config.hostname, sizeof(config.hostname));
-			}
-			else if (p->name() == "tz")
-			{
-				tz.clearCache();
+						  p->value().toCharArray(config.hostname, sizeof(config.hostname));
+					  }
+					  else if (p->name() == "tz")
+					  {
+						  tz.clearCache();
 
-				p->value().toCharArray(config.tz, sizeof(config.tz));
-			}
-		}
+						  p->value().toCharArray(config.tz, sizeof(config.tz));
+					  }
+				  }
 
-		request->send(200, "text/plain", "OK");
-	});
+				  request->send(200, "text/plain", "OK");
+			  });
 
 	MDNS.addService("http", "tcp", 80);
 
@@ -958,6 +1315,14 @@ void setup()
 
 void loop()
 {
+	if (!client.connected())
+	{
+		reconnect();
+	}
+	client.loop();
+	/* if (!WiFi.isConnected()){
+		Serial.println("Wifi disconnect");
+	} */
 
 	currentMillis = millis();
 
@@ -995,7 +1360,8 @@ void loop()
 	//Set background color
 	for (int Led = 0; Led < 60; Led = Led + 1)
 	{
-		leds[Led] = clockdisplays[config.activeclockdisplay].backgroundColor;
+
+		leds[rotate(Led)] = clockdisplays[config.activeclockdisplay].backgroundColor;
 	}
 
 	if (clockdisplays[config.activeclockdisplay].rainbowgb == 1) //show rainbow background
@@ -1003,11 +1369,14 @@ void loop()
 		fill_rainbow(leds, NUM_LEDS, 5, 8);
 	}
 
-	//Set hour marks
-	for (int Led = 0; Led <= 55; Led = Led + 5)
+	if (hourmarks_rgb_state)
 	{
-		leds[rotate(Led)] = clockdisplays[config.activeclockdisplay].hourMarkColor;
-		//leds[rotate(Led)].fadeToBlackBy(230);
+		//Set hour marks
+		for (int Led = 0; Led <= 55; Led = Led + 5)
+		{
+			leds[rotate(Led)] = clockdisplays[config.activeclockdisplay].hourMarkColor;
+			//leds[rotate(Led)].fadeToBlackBy(230);
+		}
 	}
 
 	//Hour hand
@@ -1015,9 +1384,17 @@ void loop()
 
 	uint8_t hrs12 = (tz.hour() % 12);
 	leds[rotate((hrs12 * 5) + houroffset)] = clockdisplays[config.activeclockdisplay].hourColor;
-	//leds[rotate((hrs12 * 5) + houroffset) + 1 ] = CRGB::DarkRed;
-	//leds[rotate((hrs12 * 5) + houroffset )- 1 ] = CRGB::DarkRed;
 
+	/* if (hrs12 == 0)
+	{
+		leds[rotate((hrs12 * 5) + houroffset) + 1] = clockdisplays[config.activeclockdisplay].hourColor;
+		leds[rotate(59)] = clockdisplays[config.activeclockdisplay].hourColor;
+	}
+	else
+	{
+		leds[rotate((hrs12 * 5) + houroffset) + 1] = clockdisplays[config.activeclockdisplay].hourColor;
+		leds[rotate((hrs12 * 5) + houroffset) - 1] = clockdisplays[config.activeclockdisplay].hourColor;
+	} */
 	//Minute hand
 	leds[rotate(tz.minute())] = clockdisplays[config.activeclockdisplay].minuteColor;
 
@@ -1025,12 +1402,12 @@ void loop()
 	if (clockdisplays[config.activeclockdisplay].showseconds == 1)
 	{
 
-		/* int msto255 = map(tz.ms(), 1, 1000, 0, 255);
+		/* 		int msto255 = map(tz.ms(), 1, 1000, 0, 255);
 		CRGB pixelColor1 = blend(clockdisplays[config.activeclockdisplay].secondColor, leds[rotate(tz.second() - 1)], msto255);
 		CRGB pixelColor2 = blend(leds[rotate(tz.second())], clockdisplays[config.activeclockdisplay].secondColor, msto255);
 
 		leds[rotate(tz.second())] = pixelColor2;
-		leds[rotate(tz.second() - 1)] = pixelColor1;  */
+		leds[rotate(tz.second() - 1)] = pixelColor1; */
 
 		//normal
 
@@ -1054,7 +1431,7 @@ void loop()
 			lastExecutedMillis = currentMillis;		   // save the last executed time
 			lightReading = analogRead(LIGHTSENSORPIN); //Read light level
 
-			int brightnessMap = map(lightReading, 0, 128, MinBrightness, MaxBrightness);
+			int brightnessMap = map(lightReading, 0, 32, MinBrightness, MaxBrightness);
 			brightnessMap = constrain(brightnessMap, 0, 255);
 
 			sliderBrightnessValue = brightnessMap;
@@ -1076,4 +1453,5 @@ void loop()
 	}
 
 	FastLED.show();
+	FastLED.delay(1000 / 60);
 }
