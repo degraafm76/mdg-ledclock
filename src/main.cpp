@@ -1,40 +1,39 @@
 #include <Arduino.h>
-#include "helperfunctions.h"
+#include <helperfunctions.h>
 #include <ezTime.h>
 #include <ESP8266WiFi.h>
-
-#include <ESP8266mDNS.h> // Include the mDNS library
-
+#include <ESP8266mDNS.h>
 #include <FastLED.h>
-
-// Webserver
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <AsyncElegantOTA.h>
 #include <ArduinoJson.h>
-
-#include "LittleFS.h" // LittleFS is declared
-
+#include <LittleFS.h>
 #include <PubSubClient.h>
+
 WiFiClient espClient;
 
 #define NUM_LEDS 60						  // How many leds are in the clock?
-#define ROTATE_LEDS 30					  // rotate leds by this number. Led ring is connected upside down
+#define ROTATE_LEDS 30					  // Rotate leds by this number. Led ring is connected upside down
 #define MaxBrightness 255				  // Max brightness
 #define MinBrightness 15				  // Min brightness
-#define DATA_PIN 3						  // Neopixel datapin
-#define LIGHTSENSORPIN A0				  // Ambient light sensor reading
+#define DATA_PIN 3						  // Neopixel data pin
+#define LIGHTSENSORPIN A0				  // Ambient light sensor pin
 #define EXE_INTERVAL_AUTO_BRIGHTNESS 5000 // Interval (ms) to check light sensor value
 #define CLOCK_DISPLAYS 8				  // Nr of user defined clock displays
 #define SCHEDULES 12					  // Nr of user defined schedules
 
-unsigned long lastExecutedMillis = 0; // variable to save the last executed time
+unsigned long lastExecutedMillis = 0; // Variable to save the last executed time
 unsigned long currentMillis;
-boolean apStopped = false;
-boolean wifiConnected = false;
-float lightReading;
+boolean apStopped = false;	   // Variable to store accespoint state
+boolean wifiConnected = false; // Variable to store wifi connected state
+float lightReading;			   // Variable to store the ambient light value
 
-// variables used to store the mqtt state, the brightness and the color of the light
+CRGB leds[NUM_LEDS]; // This is an array of leds, one item for each led in the clock
+
+int sliderBrightnessValue = 128; // Variable to store brightness slidervalue in webserver
+
+// Variables used to store the mqtt state, the brightness and the color of the light
 boolean hour_rgb_state = true;
 uint8_t hour_rgb_brightness = 100;
 uint8_t hour_rgb_red = 255;
@@ -99,13 +98,7 @@ Config config; // <- global configuration object
 
 tmElements_t tm;
 
-CRGB leds[NUM_LEDS]; // This is an array of leds.  One item for each led in the clock
-
 Timezone tz;
-
-//Webserver
-int sliderBrightnessValue = 128;
-const char *PARAM_INPUT = "value";
 
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);
@@ -113,7 +106,7 @@ AsyncWebServer server(80);
 // Replaces placeholder with section in your web page
 String processor(const String &var)
 {
-	//Serial.println(var);
+
 	if (var == "sliderBrightnessValue")
 	{
 		return String(sliderBrightnessValue);
@@ -394,7 +387,7 @@ boolean checkConnection()
 const uint8_t MSG_BUFFER_SIZE = 20;
 char m_msg_buffer[MSG_BUFFER_SIZE];
 
-PubSubClient client(espClient);
+PubSubClient mqttclient(espClient);
 
 // function called to adapt the brightness and the color of the led
 void setHourColor(uint8_t p_red, uint8_t p_green, uint8_t p_blue)
@@ -433,10 +426,11 @@ void setHourmarksColor(uint8_t p_red, uint8_t p_green, uint8_t p_blue)
 	long RGB = ((long)p_red << 16L) | ((long)p_green << 8L) | (long)p_blue;
 	clockdisplays[config.activeclockdisplay].hourMarkColor = RGB;
 }
+
 void publishRGBhourBrightness()
 {
 	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d", hour_rgb_brightness);
-	client.publish("ledclock/hour/brightness/status", m_msg_buffer, true);
+	mqttclient.publish("ledclock/hour/brightness/status", m_msg_buffer, true);
 }
 void publishRGBhourColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
 {
@@ -445,56 +439,66 @@ void publishRGBhourColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
 
 	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d,%d,%d", rgb_red, rgb_green, rgb_blue);
 
-	client.publish("ledclock/hour/rgb/status", m_msg_buffer, true);
+	mqttclient.publish("ledclock/hour/rgb/status", m_msg_buffer, true);
 }
+void publishRGBhourState()
+
+{
+	if (hour_rgb_state)
+	{
+		mqttclient.publish("ledclock/hour/rgb/light/status", "ON", true);
+	}
+	else
+	{
+		mqttclient.publish("ledclock/hour/rgb/light/status", "OFF", true);
+	}
+}
+
 void publishRGBbackgroundBrightness()
 {
 	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d", background_rgb_brightness);
-	client.publish("ledclock/background/brightness/status", m_msg_buffer, true);
+	mqttclient.publish("ledclock/background/brightness/status", m_msg_buffer, true);
 }
 void publishRGBbackgroundColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
 {
 
-	//Serial.print ("send rgb");
-
 	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d,%d,%d", rgb_red, rgb_green, rgb_blue);
 
-	client.publish("ledclock/background/rgb/status", m_msg_buffer, true);
+	mqttclient.publish("ledclock/background/rgb/status", m_msg_buffer, true);
 }
 void publishRGBbackgroundState()
 {
 	if (background_rgb_state)
 	{
-		client.publish("ledclock/background/rgb/light/status", "ON", true);
+		mqttclient.publish("ledclock/background/rgb/light/status", "ON", true);
 	}
 	else
 	{
-		client.publish("ledclock/background/rgb/light/status", "OFF", true);
+		mqttclient.publish("ledclock/background/rgb/light/status", "OFF", true);
 	}
 }
+
 void publishRGBhourmarksBrightness()
 {
 	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d", hourmarks_rgb_brightness);
-	client.publish("ledclock/hourmarks/brightness/status", m_msg_buffer, true);
+	mqttclient.publish("ledclock/hourmarks/brightness/status", m_msg_buffer, true);
 }
 void publishRGBhourmarksColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
 {
 
-	//Serial.print ("send rgb");
-
 	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d,%d,%d", rgb_red, rgb_green, rgb_blue);
 
-	client.publish("ledclock/hourmarks/rgb/status", m_msg_buffer, true);
+	mqttclient.publish("ledclock/hourmarks/rgb/status", m_msg_buffer, true);
 }
 void publishRGBhourmarksState()
 {
 	if (hourmarks_rgb_state)
 	{
-		client.publish("ledclock/hourmarks/rgb/light/status", "ON", true);
+		mqttclient.publish("ledclock/hourmarks/rgb/light/status", "ON", true);
 	}
 	else
 	{
-		client.publish("ledclock/hourmarks/rgb/light/status", "OFF", true);
+		mqttclient.publish("ledclock/hourmarks/rgb/light/status", "OFF", true);
 	}
 }
 
@@ -506,7 +510,7 @@ void callback(char *p_topic, byte *p_payload, unsigned int p_length)
 		payload.concat((char)p_payload[i]);
 	}
 
-	if (String(p_topic) == "ledclock/hour/rgb/set")
+	if (String("ledclock/hour/rgb/set").equals(p_topic))
 	{
 		// get the position of the first and second commas
 		uint8_t firstIndex = payload.indexOf(',');
@@ -545,7 +549,7 @@ void callback(char *p_topic, byte *p_payload, unsigned int p_length)
 		publishRGBhourColor(rgb_red, rgb_green, rgb_blue);
 	}
 
-	else if (String(p_topic) == "ledclock/background/rgb/set")
+	else if (String("ledclock/background/rgb/set").equals(p_topic))
 	{
 		// get the position of the first and second commas
 		uint8_t firstIndex = payload.indexOf(',');
@@ -583,7 +587,7 @@ void callback(char *p_topic, byte *p_payload, unsigned int p_length)
 		setBackgroundColor(rgb_red, rgb_green, rgb_blue);
 		publishRGBbackgroundColor(rgb_red, rgb_green, rgb_blue);
 	}
-	else if (String(p_topic) == "ledclock/hourmarks/rgb/set")
+	else if (String("ledclock/hourmarks/rgb/set").equals(p_topic))
 	{
 		// get the position of the first and second commas
 		uint8_t firstIndex = payload.indexOf(',');
@@ -666,6 +670,26 @@ void callback(char *p_topic, byte *p_payload, unsigned int p_length)
 			publishRGBhourmarksBrightness();
 		}
 	}
+	else if (String("ledclock/hour/rgb/light/switch").equals(p_topic))
+	{
+		// test if the payload is equal to "ON" or "OFF"
+		if (payload.equals(String("ON")))
+		{
+			if (hour_rgb_state != true)
+			{
+				hour_rgb_state = true;
+				publishRGBhourState();
+			}
+		}
+		else if (payload.equals(String("OFF")))
+		{
+			if (hour_rgb_state != false)
+			{
+				hour_rgb_state = false;
+				publishRGBhourState();
+			}
+		}
+	}
 	else if (String("ledclock/background/rgb/light/switch").equals(p_topic))
 	{
 		// test if the payload is equal to "ON" or "OFF"
@@ -713,21 +737,21 @@ void callback(char *p_topic, byte *p_payload, unsigned int p_length)
 void reconnect()
 {
 	// Loop until we're reconnected
-	while (!client.connected())
+	while (!mqttclient.connected())
 	{
 		Serial.println("INFO: Attempting MQTT connection...");
 		// Attempt to connect
-		if (client.connect("Ledclock", "admin", "44s8BA4H"))
+		if (mqttclient.connect("Ledclock", "admin", "44s8BA4H"))
 		{
 			Serial.println("INFO: connected");
 
-			client.publish("ledclock/status", "ON");
-			client.subscribe("ledclock/#");
+			mqttclient.publish("ledclock/status", "ON");
+			mqttclient.subscribe("ledclock/#");
 		}
 		else
 		{
 			Serial.print("ERROR: failed, rc=");
-			Serial.print(client.state());
+			Serial.print(mqttclient.state());
 			Serial.println("DEBUG: try again in 5 seconds");
 			// Wait 5 seconds before retrying
 			delay(5000);
@@ -738,8 +762,7 @@ void reconnect()
 void setup()
 {
 
-	// sanity check delay - allows reprogramming if accidently blowing power w/leds
-	delay(2000);
+	delay(2000); // sanity check delay - allows reprogramming if accidently blowing power w/leds
 
 	Serial.begin(115200);
 	while (!Serial)
@@ -926,8 +949,8 @@ void setup()
 		Serial.println("Error setting up MDNS responder!");
 	}
 
-	client.setServer("hass.powerkite.nl", 1883);
-	client.setCallback(callback);
+	mqttclient.setServer("hass.powerkite.nl", 1883);
+	mqttclient.setCallback(callback);
 
 	// Provide official timezone names
 	// https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
@@ -1315,11 +1338,11 @@ void setup()
 
 void loop()
 {
-	if (!client.connected())
+	if (!mqttclient.connected())
 	{
 		reconnect();
 	}
-	client.loop();
+	mqttclient.loop();
 	/* if (!WiFi.isConnected()){
 		Serial.println("Wifi disconnect");
 	} */
@@ -1379,13 +1402,15 @@ void loop()
 		}
 	}
 
-	//Hour hand
-	int houroffset = map(tz.minute(), 0, 60, 0, 5); //move the hour hand when the minutes pass
+	if (hour_rgb_state)
+	{
+		//Hour hand
+		int houroffset = map(tz.minute(), 0, 60, 0, 5); //move the hour hand when the minutes pass
 
-	uint8_t hrs12 = (tz.hour() % 12);
-	leds[rotate((hrs12 * 5) + houroffset)] = clockdisplays[config.activeclockdisplay].hourColor;
+		uint8_t hrs12 = (tz.hour() % 12);
+		leds[rotate((hrs12 * 5) + houroffset)] = clockdisplays[config.activeclockdisplay].hourColor;
 
-	/* if (hrs12 == 0)
+		/* if (hrs12 == 0)
 	{
 		leds[rotate((hrs12 * 5) + houroffset) + 1] = clockdisplays[config.activeclockdisplay].hourColor;
 		leds[rotate(59)] = clockdisplays[config.activeclockdisplay].hourColor;
@@ -1395,9 +1420,9 @@ void loop()
 		leds[rotate((hrs12 * 5) + houroffset) + 1] = clockdisplays[config.activeclockdisplay].hourColor;
 		leds[rotate((hrs12 * 5) + houroffset) - 1] = clockdisplays[config.activeclockdisplay].hourColor;
 	} */
-	//Minute hand
-	leds[rotate(tz.minute())] = clockdisplays[config.activeclockdisplay].minuteColor;
-
+		//Minute hand
+		leds[rotate(tz.minute())] = clockdisplays[config.activeclockdisplay].minuteColor;
+	}
 	//Second hand
 	if (clockdisplays[config.activeclockdisplay].showseconds == 1)
 	{
