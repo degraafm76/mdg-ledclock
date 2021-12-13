@@ -22,6 +22,7 @@ WiFiClient espClient;
 #define EXE_INTERVAL_AUTO_BRIGHTNESS 5000 // Interval (ms) to check light sensor value
 #define CLOCK_DISPLAYS 8				  // Nr of user defined clock displays
 #define SCHEDULES 12					  // Nr of user defined schedules
+//#define MQTT							  // MQTT client enabled
 
 unsigned long lastExecutedMillis = 0; // Variable to save the last executed time
 unsigned long currentMillis;
@@ -60,6 +61,7 @@ uint8_t background_rgb_red = 255;
 uint8_t background_rgb_green = 255;
 uint8_t background_rgb_blue = 255;
 
+#ifdef MQTT
 // MQTT: topics
 // Hour state
 const PROGMEM char *MQTT_HOUR_STATE_TOPIC = "/hour/status";
@@ -83,6 +85,7 @@ const PROGMEM char *MQTT_MINUTE_RGB_COMMAND_TOPIC = "/minute/rgb/set";
 // payloads by default (on/off)
 const PROGMEM char *LIGHT_ON = "ON";
 const PROGMEM char *LIGHT_OFF = "OFF";
+#endif
 
 // Config
 String jsonConfigfile;
@@ -424,6 +427,7 @@ char m_msg_buffer[MSG_BUFFER_SIZE];
 const uint8_t TOPIC_BUFFER_SIZE = 64;
 char m_topic_buffer[TOPIC_BUFFER_SIZE];
 
+#ifdef MQTT
 PubSubClient mqttclient(espClient);
 
 // function called to adapt the brightness and the color of the led
@@ -705,7 +709,7 @@ void callback(char *p_topic, byte *p_payload, unsigned int p_length)
 		setHourColor(rgb_red, rgb_green, rgb_blue);
 		publishRGBhourColor(rgb_red, rgb_green, rgb_blue);
 	}
-	
+
 	else if ((String(config.hostname) + String(MQTT_MINUTE_COMMAND_TOPIC)).equals(p_topic))
 	{
 
@@ -780,7 +784,7 @@ void callback(char *p_topic, byte *p_payload, unsigned int p_length)
 		setMinuteColor(rgb_red, rgb_green, rgb_blue);
 		publishRGBminuteColor(rgb_red, rgb_green, rgb_blue);
 	}
-	
+
 	else if (String("ledclock/second/rgb/set").equals(p_topic))
 	{
 		// get the position of the first and second commas
@@ -895,8 +899,7 @@ void callback(char *p_topic, byte *p_payload, unsigned int p_length)
 		setHourmarksColor(rgb_red, rgb_green, rgb_blue);
 		publishRGBhourmarksColor(rgb_red, rgb_green, rgb_blue);
 	}
-	
-	
+
 	else if (String("ledclock/second/brightness/set").equals(p_topic))
 	{
 		uint8_t brightness = payload.toInt();
@@ -942,7 +945,7 @@ void callback(char *p_topic, byte *p_payload, unsigned int p_length)
 			publishRGBhourmarksBrightness();
 		}
 	}
-	
+
 	else if (String("ledclock/second/rgb/light/switch").equals(p_topic))
 	{
 		// test if the payload is equal to "ON" or "OFF"
@@ -969,7 +972,7 @@ void callback(char *p_topic, byte *p_payload, unsigned int p_length)
 			clockdisplays[config.activeclockdisplay].showseconds = 0;
 		}
 	}
-	
+
 	else if (String("ledclock/background/rgb/light/switch").equals(p_topic))
 	{
 		// test if the payload is equal to "ON" or "OFF"
@@ -1039,6 +1042,7 @@ void reconnect()
 		}
 	}
 }
+#endif
 
 void setup()
 {
@@ -1230,9 +1234,10 @@ void setup()
 		Serial.println("Error setting up MDNS responder!");
 	}
 
+#ifdef MQTT
 	mqttclient.setServer("hass.powerkite.nl", 1883);
 	mqttclient.setCallback(callback);
-
+#endif
 	// Provide official timezone names
 	// https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 	if (!tz.setCache(0))
@@ -1619,14 +1624,16 @@ void setup()
 
 void loop()
 {
+#ifdef MQTT
 	if (!mqttclient.connected())
 	{
 		reconnect();
 	}
 	mqttclient.loop();
-	/* if (!WiFi.isConnected()){
+/* if (!WiFi.isConnected()){
 		Serial.println("Wifi disconnect");
 	} */
+#endif
 
 	currentMillis = millis();
 
@@ -1759,7 +1766,7 @@ void loop()
 
 		int brightnessMap = map(sliderBrightnessValue, 0, 255, MinBrightness, MaxBrightness);
 		brightnessMap = constrain(brightnessMap, 0, 255);
-
+		
 		FastLED.setBrightness(brightnessMap);
 	}
 
