@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 
-
 //Default HEX conversion strips leading zero's which we like to keep for use with the js colorpicker.
 String inttoHex(int num, int precision)
 {
@@ -13,6 +12,22 @@ String inttoHex(int num, int precision)
     sprintf(tmp, format, num);
     String hexstring = String(tmp);
     return hexstring;
+}
+
+int ltor(long color)
+{ // long to Red
+    int r = color >> 16;
+    return r;
+}
+int ltog(long color)
+{ // long to Green
+    int g = color >> 8 & 0xFF;
+    return g;
+}
+int ltob(long color)
+{ // long to Blue
+    int b = color & 0xFF;
+    return b;
 }
 
 // Convert HEX string to Long

@@ -16,19 +16,30 @@ WiFiClient espClient;
 #define NUM_LEDS 60						  // How many leds are in the clock?
 #define ROTATE_LEDS 30					  // Rotate leds by this number. Led ring is connected upside down
 #define MaxBrightness 255				  // Max brightness
-#define MinBrightness 15				  // Min brightness
+#define MinBrightness 2					  // Min brightness
 #define DATA_PIN 3						  // Neopixel data pin
 #define LIGHTSENSORPIN A0				  // Ambient light sensor pin
-#define EXE_INTERVAL_AUTO_BRIGHTNESS 5000 // Interval (ms) to check light sensor value
+#define EXE_INTERVAL_AUTO_BRIGHTNESS 1000 // Interval (ms) to check light sensor value
 #define CLOCK_DISPLAYS 8				  // Nr of user defined clock displays
 #define SCHEDULES 12					  // Nr of user defined schedules
 #define MQTTENABLED						  // MQTT client enabled
 
+long lastReconnectAttempt = 0;
 unsigned long lastExecutedMillis = 0; // Variable to save the last executed time
 unsigned long currentMillis;
-boolean apStopped = false;	   // Variable to store accespoint state
 boolean wifiConnected = false; // Variable to store wifi connected state
 float lightReading;			   // Variable to store the ambient light value
+
+// Define the number of samples to keep track of. The higher the number, the
+// more the readings will be smoothed, but the slower the output will respond to
+// the input. Using a constant rather than a normal variable lets us use this
+// value to determine the size of the readings array.
+const int numReadings = 20;
+
+int readings[numReadings]; // the readings from the analog input
+int readIndex = 0;		   // the index of the current reading
+int total = 0;			   // the running total
+int average = 0;		   // the average
 
 CRGB leds[NUM_LEDS]; // This is an array of leds, one item for each led in the clock
 
@@ -131,6 +142,8 @@ struct Config
 	char ssid[33];
 	char wifipassword[65];
 	char hostname[17];
+	char mqttserver[17];
+	char mqttport[5];
 };
 
 typedef struct Clockdisplay
@@ -324,6 +337,8 @@ void saveConfiguration(const char *filename)
 	doc["ssid"] = config.ssid;
 	doc["wp"] = config.wifipassword;
 	doc["hn"] = config.hostname;
+	doc["ms"] = config.mqttserver;
+	doc["ms"] = config.mqttport;
 
 	Serial.print(config.tz);
 
@@ -1055,30 +1070,29 @@ void callback(char *p_topic, byte *p_payload, unsigned int p_length)
 	}
 }
 
-void reconnect()
+boolean MQTTreconnect()
 {
-	// Loop until we're reconnected
-	while (!mqttclient.connected())
+	Serial.println("INFO: Attempting MQTT connection...");
+	// Attempt to connect
+	if (mqttclient.connect(config.hostname, "admin", "44s8BA4H"))
 	{
-		Serial.println("INFO: Attempting MQTT connection...");
-		// Attempt to connect
-		if (mqttclient.connect(config.hostname, "admin", "44s8BA4H"))
-		{
-			Serial.println("INFO: connected");
+		Serial.println("INFO: connected");
 
-			snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, "/#");
-			Serial.print("Subscribe to: " + String(m_topic_buffer));
-			mqttclient.subscribe(m_topic_buffer);
-		}
-		else
-		{
-			Serial.print("ERROR: failed, rc=");
-			Serial.print(mqttclient.state());
-			Serial.println("DEBUG: try again in 5 seconds");
-			// Wait 5 seconds before retrying
-			delay(5000);
-		}
+		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, "/#");
+		Serial.println("Subscribe to: " + String(m_topic_buffer));
+		mqttclient.subscribe(m_topic_buffer);
+
+		//snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d,%d,%d", ltor(clockdisplays[config.activeclockdisplay].backgroundColor), ltog(clockdisplays[config.activeclockdisplay].backgroundColor), ltob(clockdisplays[config.activeclockdisplay].backgroundColor));
+		//snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_BACKGROUND_RGB_STATE_TOPIC);
+		//mqttclient.publish(m_topic_buffer, m_msg_buffer, true);
 	}
+	else
+	{
+		Serial.print("ERROR: failed, rc=");
+		Serial.print(mqttclient.state());
+		Serial.println("DEBUG: try again in 5 seconds");
+	}
+	return mqttclient.connected();
 }
 #endif
 
@@ -1192,6 +1206,8 @@ void setup()
 	strlcpy(config.ssid, config_doc["ssid"] | "", sizeof(config.ssid));
 	strlcpy(config.wifipassword, config_doc["wp"] | "", sizeof(config.wifipassword));
 	strlcpy(config.hostname, config_doc["hn"] | "ledclock", sizeof(config.hostname));
+	strlcpy(config.mqttserver, config_doc["ms"] | "", sizeof(config.mqttserver));
+	strlcpy(config.mqttport, config_doc["mp"] | "", sizeof(config.mqttport));
 
 	/*
 	Serial.println(jsonSchedulefile); 	
@@ -1205,6 +1221,7 @@ void setup()
 														   //.setCorrection(TypicalLEDStrip);
 		.setCorrection(0xFFFFFF);						   //No correction
 	FastLED.setMaxRefreshRate(400);
+	//FastLED.setDither( 0 );
 
 	WiFi.mode(WIFI_AP_STA);
 
@@ -1258,11 +1275,7 @@ void setup()
 	//default IP = 192.168.4.1
 	//WiFi.mode(WIFI_AP);
 
-	if (wifiConnected == true)
-	{
-		WiFi.softAP("MDG-Ledclock1 " + WiFi.localIP().toString(), apPassword); //show ipadress when connected to wifi
-	}
-	else
+	if (wifiConnected == false)
 	{
 		WiFi.softAP("MDG-Ledclock1", apPassword);
 	}
@@ -1435,6 +1448,11 @@ void setup()
 								   request->send(200, "application/json", response);
 								   Serial.println(ESP.getFreeHeap());
 							   });
+		// initialize all the readings to 0:
+		for (int thisReading = 0; thisReading < numReadings; thisReading++)
+		{
+			readings[thisReading] = 0;
+		}
 
 	});
 
@@ -1666,11 +1684,34 @@ void loop()
 
 	if (WiFi.isConnected())
 	{
+
 		if (!mqttclient.connected())
 		{
-			reconnect();
+			long now = millis();
+			//Serial.print("Now: ");
+			//Serial.println(now);
+			//Serial.print("lastReconnectAttempt: ");
+			//Serial.println(lastReconnectAttempt);
+
+			if (now - lastReconnectAttempt > 5000)
+			{
+				Serial.println("Try to reconnect MQTT");
+				lastReconnectAttempt = now;
+
+				// Attempt to MQTTreconnect
+				if (MQTTreconnect())
+				{
+					Serial.println("it seems we are connected to MQTT");
+					lastReconnectAttempt = 0;
+				}
+			}
 		}
-		mqttclient.loop();
+		else
+		{
+			// Client connected
+
+			mqttclient.loop();
+		}
 	}
 
 /* if (!WiFi.isConnected()){
@@ -1686,13 +1727,6 @@ void loop()
 
 	MDNS.update();
 
-	if (currentMillis > 300000 && apStopped == false && wifiConnected == true) //disable AP after 5 minutes but only when there is a Wi-Fi connection
-	{
-
-		WiFi.softAPdisconnect(true);
-		Serial.println("Stopping AP...");
-		apStopped = true;
-	}
 
 	//Process Schedule every new minute
 	if (currentMinute != tz.minute()) //check if a minute has passed
@@ -1763,13 +1797,14 @@ void loop()
 	if (clockdisplays[config.activeclockdisplay].showseconds == 1)
 	{
 
-		/* 		int msto255 = map(tz.ms(), 1, 1000, 0, 255);
+		/*
+		int msto255 = map(tz.ms(), 1, 999, 0, 255);
 		CRGB pixelColor1 = blend(clockdisplays[config.activeclockdisplay].secondColor, leds[rotate(tz.second() - 1)], msto255);
 		CRGB pixelColor2 = blend(leds[rotate(tz.second())], clockdisplays[config.activeclockdisplay].secondColor, msto255);
 
 		leds[rotate(tz.second())] = pixelColor2;
-		leds[rotate(tz.second() - 1)] = pixelColor1; */
-
+		leds[rotate(tz.second() - 1)] = pixelColor1;
+*/
 		//normal
 
 		leds[rotate(tz.second())] = clockdisplays[config.activeclockdisplay].secondColor;
@@ -1789,18 +1824,50 @@ void loop()
 		//Set brightness when auto brightness is active
 		if (currentMillis - lastExecutedMillis >= EXE_INTERVAL_AUTO_BRIGHTNESS)
 		{
-			lastExecutedMillis = currentMillis;		   // save the last executed time
-			lightReading = analogRead(LIGHTSENSORPIN); //Read light level
+			lastExecutedMillis = currentMillis; // save the last executed time
+												//lightReading = analogRead(LIGHTSENSORPIN); //Read light level
 
-			int brightnessMap = map(lightReading, 0, 128, MinBrightness, MaxBrightness);
-			brightnessMap = constrain(brightnessMap, 0, 255);
+			// subtract the last reading:
+			total = total - readings[readIndex];
+			// read from the sensor:
+			readings[readIndex] = analogRead(LIGHTSENSORPIN);
+
+			float lux = readings[readIndex] * 0.9765625; // 1000/1024
+
+			//Serial.print("Raw light read:");
+			//Serial.println(readings[readIndex]);
+			//Serial.print("Lux:");
+			//Serial.println(lux);
+			// add the reading to the total:
+			total = total + readings[readIndex];
+			// advance to the next position in the array:
+			readIndex = readIndex + 1;
+
+			// if we're at the end of the array...
+			if (readIndex >= numReadings)
+			{
+				// ...wrap around to the beginning:
+				readIndex = 0;
+			}
+
+			// calculate the average:
+			average = total / numReadings;
+			// send it to the computer as ASCII digits
+			//Serial.print("Avarage:");
+			//Serial.println(average);
+
+			//float ratio = average / 1023.0; //Get percent of maximum value (1023)
+			//ratio = pow(ratio, 0.3);
+
+			int brightnessMap = map(average, 2, 64, MinBrightness, MaxBrightness);
+
+			brightnessMap = constrain(brightnessMap, MinBrightness, MaxBrightness);
 
 			sliderBrightnessValue = brightnessMap;
-			//int brightnessMap = map(lightReading, 0, 1024, MinBrightness, MaxBrightness);
+			//Serial.print("Auto brightness: ");
+			//Serial.println(brightnessMap);
 
 			FastLED.setBrightness(brightnessMap);
-			//Serial.println(lightReading);
-			//Serial.println(brightnessMap);
 		}
 	}
 	else
@@ -1808,11 +1875,13 @@ void loop()
 		sliderBrightnessValue = clockdisplays[config.activeclockdisplay].brightness;
 
 		int brightnessMap = map(sliderBrightnessValue, 0, 255, MinBrightness, MaxBrightness);
-		brightnessMap = constrain(brightnessMap, 0, 255);
+		brightnessMap = constrain(brightnessMap, MinBrightness, MaxBrightness);
 
-		FastLED.setBrightness(brightnessMap);
+		//FastLED.setBrightness(brightnessMap);
+		//Serial.print("Manual brightness: ");
+		//Serial.println(brightnessMap);
 	}
 
-	FastLED.show();
-	FastLED.delay(1000 / 60);
+	//FastLED.show();
+	FastLED.delay(1000 / 400);
 }
