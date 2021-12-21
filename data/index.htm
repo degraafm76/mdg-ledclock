@@ -22,6 +22,8 @@
             </ons-tab>
             <ons-tab page="tab3.html" label="Settings" icon="md-settings">
             </ons-tab>
+            <ons-tab page="tab4.html" label="Info" icon="md-info">
+            </ons-tab>
         </ons-tabbar>
     </ons-page>
     <template id="tab1.html">
@@ -141,7 +143,8 @@
         <ons-page id="Tab2">
 
 
-            <ons-dialog mask-color='rgba(192,192,192,0.3)' style='margin-left: 10px;margin-right: 10px;' id="schedule-dialog" cancelable>
+            <ons-dialog mask-color='rgba(192,192,192,0.3)' style='margin-left: 10px;margin-right: 10px;'
+                id="schedule-dialog" cancelable>
                 <ons-toolbar inline>
                     <div class="center" id="scheduletxt">
                         Schedule...
@@ -217,7 +220,8 @@
                 <div class="content">
                     <div style="text-align: center; margin-top: 30px;">
                         <p>
-                            <ons-input id="hostname" modifier="material" placeholder="hostname" maxlength="16" value="%hostname%"></ons-input>
+                            <ons-input id="hostname" modifier="material" placeholder="hostname" maxlength="16"
+                                value="%hostname%"></ons-input>
                         </p>
                     </div>
                 </div>
@@ -225,7 +229,7 @@
             </ons-card>
             <ons-card>
                 <div style="text-align: center;" class="title">
-                    Timezone:
+                    Timezone
                 </div>
                 <div class="content">
                     <div style="text-align: center; margin-top: 30px;">
@@ -697,9 +701,47 @@
                     </div>
                 </div>
             </ons-card>
+            <ons-card>
+                <div style="text-align: center;" class="title">
+                    MQTT settings
+                </div>
+                <div class="content">
+                    <div style="text-align: center; margin-top: 10px;">
+                        <p>
+                        <div id="id02"></div>
+                        </p><br>
+                        <p>
+                            <ons-input id="mqtt_server" modifier="material" placeholder="MQTT Server" value="%mqtt_server%"></ons-input>
+                        </p>
+                        <p>
+                            <ons-input id="mqtt_port" modifier="material" placeholder="MQTT port"
+                                value="%mqtt_port%"></ons-input>
+                        </p>
+                       
+                    </div>
+                </div>
+            </ons-card>
             <p style="margin-top: 30px; text-align: right;">
                 <ons-button onclick="save_settings()">Save & reboot</ons-button>
             </p>
+        </ons-page>
+    </template>
+    <template id="tab4.html">
+        <ons-page id="Tab4">
+            <b>Clock</b><br>
+            Model: %clock_model%<br>
+            Software version: %software_version%<br>
+            Software compile date/time: %compile_date_time%<br><br>
+            <b>Wifi</b><br>
+            WiFi connected to SSID: %ssid%<br>
+            WiFi RSSI: %wifi_rssi%<br>
+            WiFi Channel: %wifi_channel%<br>
+            Wifi IP-Address: %wifi_ip%<br>
+            WiFi MAC Address: %wifi_mac%<br><br>
+            <b>Light sensor:</b><br>
+            LUX: %lux%
+
+
         </ons-page>
 
 
@@ -930,13 +972,21 @@
         var wifipassword = encodeURIComponent(document.getElementById('wifipassword').value);
         var tz = encodeURIComponent(document.getElementById('tz').value);
         var hostname = encodeURIComponent(document.getElementById('hostname').value);
+        var mqtt_server = encodeURIComponent(document.getElementById('mqtt_server').value);
+        var mqtt_port = encodeURIComponent(document.getElementById('mqtt_port').value);
         var urlparams = '';
 
-        if (hostname != 'ledclock' && hostname !='') {
+        if (hostname != '') {
             urlparams = "&hostname=" + hostname;
         }
         if (tz != '') {
             urlparams += "&tz=" + tz;
+        }
+        
+            urlparams += "&mqtt_server=" + mqtt_server;
+        
+        if (mqtt_port != ''){
+            urlparams += "&mqtt_port=" + mqtt_port;
         }
 
         var xhr = new XMLHttpRequest();
@@ -946,9 +996,9 @@
 
             xhr.send();
         } else {
-            xhr.open("GET", "/configuration?"+ urlparams, false);
+            xhr.open("GET", "/configuration?" + urlparams, false);
 
-xhr.send();
+            xhr.send();
         }
 
         var xhr = new XMLHttpRequest();
@@ -1090,7 +1140,9 @@ xhr.send();
         });
         backgroundColorPicker.on('color:change', function (color) {
             var hex = (color.hexString.substring(1)); //strip # hash from hex code
-            console.log(color.value);
+            //console.log(color.value);
+            //var brightness = Math.round(color.hsv.v/100*100)
+            //console.log(brightness);
             var xhr = new XMLHttpRequest();
             xhr.open("GET", "/color?backgroundcolor=" + hex, true);
             xhr.send();

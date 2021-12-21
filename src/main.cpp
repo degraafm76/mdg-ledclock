@@ -13,22 +13,30 @@
 
 WiFiClient espClient;
 
-#define NUM_LEDS 60						  // How many leds are in the clock?
-#define ROTATE_LEDS 30					  // Rotate leds by this number. Led ring is connected upside down
-#define MaxBrightness 255				  // Max brightness
-#define MinBrightness 2					  // Min brightness
-#define DATA_PIN 3						  // Neopixel data pin
-#define LIGHTSENSORPIN A0				  // Ambient light sensor pin
-#define EXE_INTERVAL_AUTO_BRIGHTNESS 1000 // Interval (ms) to check light sensor value
-#define CLOCK_DISPLAYS 8				  // Nr of user defined clock displays
-#define SCHEDULES 12					  // Nr of user defined schedules
-#define MQTTENABLED						  // MQTT client enabled
+#define SOFTWARE_VERSION "1.0.0"		   // Software version
+#define CLOCK_MODEL "MDG Ledclock model 1" // MODEL
+#define NUM_LEDS 60						   // How many leds are in the clock?
+#define ROTATE_LEDS 30					   // Rotate leds by this number. Led ring is connected upside down
+#define MAX_BRIGHTNESS 255				   // Max brightness
+#define MIN_BRIGHTNESS 8				   // Min brightness (at very low brightness levels interpolating doesn't work well and the led's will flicker and not display the correct color)
+#define DATA_PIN 3						   // Neopixel data pin
+#define LIGHTSENSORPIN A0				   // Ambient light sensor pin
+#define EXE_INTERVAL_AUTO_BRIGHTNESS 1000  // Interval (ms) to check light sensor value
+#define CLOCK_DISPLAYS 8				   // Nr of user defined clock displays
+#define SCHEDULES 12					   // Nr of user defined schedules
+#define AP_NAME "MDG-Ledclock1"			   // Name of the AP when WIFI is not setup or connected
+#define MQTTENABLED						   // MQTT client enabled
+#define COMPILE_DATE __DATE__ " " __TIME__ // Compile date/time
 
 long lastReconnectAttempt = 0;
 unsigned long lastExecutedMillis = 0; // Variable to save the last executed time
 unsigned long currentMillis;
 boolean wifiConnected = false; // Variable to store wifi connected state
-float lightReading;			   // Variable to store the ambient light value
+unsigned char bssid[6];
+int channel;
+int rssi = -999;
+float lightReading; // Variable to store the ambient light value
+float lux;			//LUX
 
 // Define the number of samples to keep track of. The higher the number, the
 // more the readings will be smoothed, but the slower the output will respond to
@@ -142,8 +150,11 @@ struct Config
 	char ssid[33];
 	char wifipassword[65];
 	char hostname[17];
-	char mqttserver[17];
-	char mqttport[5];
+	char mqttserver[64];
+	int mqttport;
+	char mqttuser[32];
+	char mqttpassword[32];
+
 };
 
 typedef struct Clockdisplay
@@ -267,6 +278,48 @@ String processor(const String &var)
 	{
 		return String(config.tz);
 	}
+	if (var == "compile_date_time")
+	{
+		return String(COMPILE_DATE);
+	}
+	if (var == "software_version")
+	{
+		return String(SOFTWARE_VERSION);
+	}
+	if (var == "wifi_rssi")
+	{
+		return String(rssi);
+	}
+	if (var == "wifi_channel")
+	{
+		return String(channel);
+	}
+	if (var == "wifi_mac")
+	{
+		return String(WiFi.macAddress());
+	}
+	if (var == "wifi_ip")
+	{
+		return String(WiFi.localIP().toString());
+	}
+	if (var == "lux")
+	{
+		return String(lux);
+	}
+	if (var == "clock_model")
+	{
+		return String(CLOCK_MODEL);
+	}
+#ifdef MQTTENABLED
+	if (var == "mqtt_server")
+	{
+		return String(config.mqttserver);
+	}
+	if (var == "mqtt_port")
+	{
+		return String(config.mqttport);
+	}
+#endif
 	return String();
 }
 
@@ -338,7 +391,7 @@ void saveConfiguration(const char *filename)
 	doc["wp"] = config.wifipassword;
 	doc["hn"] = config.hostname;
 	doc["ms"] = config.mqttserver;
-	doc["ms"] = config.mqttport;
+	doc["mp"] = config.mqttport;
 
 	Serial.print(config.tz);
 
@@ -412,10 +465,6 @@ int rotate(int nr)
 		return (nr + ROTATE_LEDS);
 	}
 }
-
-unsigned char bssid[6];
-int channel;
-int rssi = -999;
 
 void scanWifi(String ssid)
 {
@@ -1207,7 +1256,7 @@ void setup()
 	strlcpy(config.wifipassword, config_doc["wp"] | "", sizeof(config.wifipassword));
 	strlcpy(config.hostname, config_doc["hn"] | "ledclock", sizeof(config.hostname));
 	strlcpy(config.mqttserver, config_doc["ms"] | "", sizeof(config.mqttserver));
-	strlcpy(config.mqttport, config_doc["mp"] | "", sizeof(config.mqttport));
+	config.mqttport = config_doc["mp"] | 1883;
 
 	/*
 	Serial.println(jsonSchedulefile); 	
@@ -1220,10 +1269,10 @@ void setup()
 	FastLED.addLeds<SK6812, DATA_PIN, GRB>(leds, NUM_LEDS) // GRB ordering is typical
 														   //.setCorrection(TypicalLEDStrip);
 		.setCorrection(0xFFFFFF);						   //No correction
-	FastLED.setMaxRefreshRate(400);
+	FastLED.setMaxRefreshRate(0);
 	//FastLED.setDither( 0 );
 
-	WiFi.mode(WIFI_AP_STA);
+	WiFi.mode(WIFI_STA);
 
 	WiFi.hostname(config.hostname);
 
@@ -1270,14 +1319,18 @@ void setup()
 	Serial.println("rssi: " + String(WiFi.RSSI()));
 	Serial.println("Channel: " + String(channel));
 	Serial.println("IP Address: " + WiFi.localIP().toString());
-
+#ifdef MQTTENABLED
+	Serial.println("MQTT Server: " + String(config.mqttserver));
+	Serial.println("MQTT Port: " + String(config.mqttport));
+#endif
 	//Serial.println("starting AP");
 	//default IP = 192.168.4.1
 	//WiFi.mode(WIFI_AP);
 
 	if (wifiConnected == false)
 	{
-		WiFi.softAP("MDG-Ledclock1", apPassword);
+		WiFi.mode(WIFI_AP); //Accespoint mode
+		WiFi.softAP(AP_NAME, apPassword);
 	}
 
 	if (!MDNS.begin(config.hostname))
@@ -1286,8 +1339,9 @@ void setup()
 	}
 
 #ifdef MQTTENABLED
-	mqttclient.setServer("hass.powerkite.nl", 1883);
+	mqttclient.setServer(config.mqttserver,config.mqttport);
 	mqttclient.setCallback(callback);
+
 #endif
 	// Provide official timezone names
 	// https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
@@ -1619,7 +1673,7 @@ void setup()
 						  {
 							  clockdisplays[config.activeclockdisplay].brightness = p->value().toInt();
 
-							  int NumtToBrightness = map(clockdisplays[config.activeclockdisplay].brightness, 0, 255, MinBrightness, MaxBrightness);
+							  int NumtToBrightness = map(clockdisplays[config.activeclockdisplay].brightness, 0, 255, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
 							  FastLED.setBrightness(NumtToBrightness);
 						  }
 					  }
@@ -1658,10 +1712,20 @@ void setup()
 
 						  p->value().toCharArray(config.hostname, sizeof(config.hostname));
 					  }
+					   else if (p->name() == "mqtt_server")
+					  {
+
+						  p->value().toCharArray(config.mqttserver, sizeof(config.mqttserver));
+					  }
+					   else if (p->name() == "mqtt_port")
+					  {
+
+						  config.mqttport = p->value().toInt();
+						  Serial.println(p->value().toInt());
+					  }
 					  else if (p->name() == "tz")
 					  {
 						  tz.clearCache();
-
 						  p->value().toCharArray(config.tz, sizeof(config.tz));
 					  }
 				  }
@@ -1685,32 +1749,35 @@ void loop()
 	if (WiFi.isConnected())
 	{
 
-		if (!mqttclient.connected())
+		if (strlen(config.mqttserver) != 0)
 		{
-			long now = millis();
-			//Serial.print("Now: ");
-			//Serial.println(now);
-			//Serial.print("lastReconnectAttempt: ");
-			//Serial.println(lastReconnectAttempt);
-
-			if (now - lastReconnectAttempt > 5000)
+			if (!mqttclient.connected())
 			{
-				Serial.println("Try to reconnect MQTT");
-				lastReconnectAttempt = now;
+				long now = millis();
+				//Serial.print("Now: ");
+				//Serial.println(now);
+				//Serial.print("lastReconnectAttempt: ");
+				//Serial.println(lastReconnectAttempt);
 
-				// Attempt to MQTTreconnect
-				if (MQTTreconnect())
+				if (now - lastReconnectAttempt > 5000)
 				{
-					Serial.println("it seems we are connected to MQTT");
-					lastReconnectAttempt = 0;
+					Serial.println("Try to reconnect MQTT");
+					lastReconnectAttempt = now;
+
+					// Attempt to MQTTreconnect
+					if (MQTTreconnect())
+					{
+						Serial.println("it seems we are connected to MQTT");
+						lastReconnectAttempt = 0;
+					}
 				}
 			}
-		}
-		else
-		{
-			// Client connected
+			else
+			{
+				// Client connected
 
-			mqttclient.loop();
+				mqttclient.loop();
+			}
 		}
 	}
 
@@ -1726,7 +1793,6 @@ void loop()
 	//AsyncElegantOTA.loop();
 
 	MDNS.update();
-
 
 	//Process Schedule every new minute
 	if (currentMinute != tz.minute()) //check if a minute has passed
@@ -1832,7 +1898,7 @@ void loop()
 			// read from the sensor:
 			readings[readIndex] = analogRead(LIGHTSENSORPIN);
 
-			float lux = readings[readIndex] * 0.9765625; // 1000/1024
+			lux = readings[readIndex] * 0.9765625; // 1000/1024
 
 			//Serial.print("Raw light read:");
 			//Serial.println(readings[readIndex]);
@@ -1859,9 +1925,9 @@ void loop()
 			//float ratio = average / 1023.0; //Get percent of maximum value (1023)
 			//ratio = pow(ratio, 0.3);
 
-			int brightnessMap = map(average, 2, 64, MinBrightness, MaxBrightness);
+			int brightnessMap = map(average, 3, 45, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
 
-			brightnessMap = constrain(brightnessMap, MinBrightness, MaxBrightness);
+			brightnessMap = constrain(brightnessMap, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
 
 			sliderBrightnessValue = brightnessMap;
 			//Serial.print("Auto brightness: ");
@@ -1874,8 +1940,8 @@ void loop()
 	{
 		sliderBrightnessValue = clockdisplays[config.activeclockdisplay].brightness;
 
-		int brightnessMap = map(sliderBrightnessValue, 0, 255, MinBrightness, MaxBrightness);
-		brightnessMap = constrain(brightnessMap, MinBrightness, MaxBrightness);
+		int brightnessMap = map(sliderBrightnessValue, 0, 255, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
+		brightnessMap = constrain(brightnessMap, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
 
 		//FastLED.setBrightness(brightnessMap);
 		//Serial.print("Manual brightness: ");
