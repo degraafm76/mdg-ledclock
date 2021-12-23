@@ -9,29 +9,47 @@
 #include <AsyncElegantOTA.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
-#include <PubSubClient.h>
+#include <Ticker.h>
+#include <AsyncMqttClient.h>
 
 WiFiClient espClient;
 
 #define SOFTWARE_VERSION "1.0.0"		   // Software version
-#define CLOCK_MODEL "MDG Ledclock model 1" // MODEL
+#define CLOCK_MODEL "MDG Ledclock model 1" // Clock Model
 #define NUM_LEDS 60						   // How many leds are in the clock?
 #define ROTATE_LEDS 30					   // Rotate leds by this number. Led ring is connected upside down
 #define MAX_BRIGHTNESS 255				   // Max brightness
 #define MIN_BRIGHTNESS 8				   // Min brightness (at very low brightness levels interpolating doesn't work well and the led's will flicker and not display the correct color)
 #define DATA_PIN 3						   // Neopixel data pin
+#define NEOPIXEL_VOLTAGE 5				   // Neopixel voltage
+#define NEOPIXEL_MILLIAMPS 1000			   // Neopixel maximum current usage in milliamps, if you have a powersource higher then 1A you can change this value to have brighter leds.
 #define LIGHTSENSORPIN A0				   // Ambient light sensor pin
 #define EXE_INTERVAL_AUTO_BRIGHTNESS 1000  // Interval (ms) to check light sensor value
 #define CLOCK_DISPLAYS 8				   // Nr of user defined clock displays
 #define SCHEDULES 12					   // Nr of user defined schedules
 #define AP_NAME "MDG-Ledclock1"			   // Name of the AP when WIFI is not setup or connected
-#define MQTTENABLED						   // MQTT client enabled
+//#define MQTT_DEBUG					   // MQTT debug enabled
 #define COMPILE_DATE __DATE__ " " __TIME__ // Compile date/time
+
+//mqtt async
+AsyncMqttClient mqttClient;
+Ticker mqttReconnectTimer;
+
+const uint8_t MSG_BUFFER_SIZE = 20;
+char m_msg_buffer[MSG_BUFFER_SIZE];
+
+const uint8_t TOPIC_BUFFER_SIZE = 64;
+char m_topic_buffer[TOPIC_BUFFER_SIZE];
+
+WiFiEventHandler wifiConnectHandler;
+WiFiEventHandler wifiDisconnectHandler;
+Ticker wifiReconnectTimer;
 
 long lastReconnectAttempt = 0;
 unsigned long lastExecutedMillis = 0; // Variable to save the last executed time
 unsigned long currentMillis;
 boolean wifiConnected = false; // Variable to store wifi connected state
+boolean MQTTConnected = false; // Variable to store wifi connected state
 unsigned char bssid[6];
 int channel;
 int rssi = -999;
@@ -80,7 +98,6 @@ uint8_t background_rgb_red = 255;
 uint8_t background_rgb_green = 255;
 uint8_t background_rgb_blue = 255;
 
-#ifdef MQTTENABLED
 // MQTT: topics
 
 // Hour state
@@ -136,7 +153,6 @@ const PROGMEM char *MQTT_HOURMARKS_RGB_COMMAND_TOPIC = "/hourmarks/rgb/set";
 // payloads by default (on/off)
 const PROGMEM char *LIGHT_ON = "ON";
 const PROGMEM char *LIGHT_OFF = "OFF";
-#endif
 
 // Config
 String jsonConfigfile;
@@ -154,7 +170,6 @@ struct Config
 	int mqttport;
 	char mqttuser[32];
 	char mqttpassword[32];
-
 };
 
 typedef struct Clockdisplay
@@ -196,335 +211,7 @@ Timezone tz;
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);
 
-// Replaces placeholder with section in your web page
-String processor(const String &var)
-{
-
-	if (var == "sliderBrightnessValue")
-	{
-		return String(sliderBrightnessValue);
-	}
-	if (var == "LDRValue")
-	{
-		return String(lightReading);
-	}
-	if (var == "backGroundColor")
-	{
-		return String(inttoHex(clockdisplays[config.activeclockdisplay].backgroundColor, 6));
-	}
-	if (var == "hourMarkColor")
-	{
-		return String(inttoHex(clockdisplays[config.activeclockdisplay].hourMarkColor, 6));
-	}
-	if (var == "hourColor")
-	{
-		return String(inttoHex(clockdisplays[config.activeclockdisplay].hourColor, 6));
-	}
-	if (var == "minuteColor")
-	{
-		return String(inttoHex(clockdisplays[config.activeclockdisplay].minuteColor, 6));
-	}
-	if (var == "secondColor")
-	{
-
-		return String(inttoHex(clockdisplays[config.activeclockdisplay].secondColor, 6));
-	}
-	if (var == "showms")
-	{
-		if (clockdisplays[config.activeclockdisplay].showms != 0)
-		{
-			return String("checked");
-		}
-	}
-	if (var == "showseconds")
-	{
-		if (clockdisplays[config.activeclockdisplay].showseconds != 0)
-		{
-			return String("checked");
-		}
-	}
-	if (var == "autobrightness")
-	{
-		if (clockdisplays[config.activeclockdisplay].autobrightness != 0)
-		{
-			return String("checked");
-		}
-	}
-	if (var == "activeclockdisplay")
-	{
-		return String(config.activeclockdisplay);
-	}
-	if (var == "ssid")
-	{
-		return String(config.ssid);
-	}
-	if (var == "wifipassword")
-	{
-
-		if (String(config.wifipassword).isEmpty())
-		{
-			return String(config.wifipassword);
-		}
-		else
-		{
-			return String("********");
-		}
-	}
-	if (var == "hostname")
-	{
-		return String(config.hostname);
-	}
-	if (var == "tz")
-	{
-		return String(config.tz);
-	}
-	if (var == "compile_date_time")
-	{
-		return String(COMPILE_DATE);
-	}
-	if (var == "software_version")
-	{
-		return String(SOFTWARE_VERSION);
-	}
-	if (var == "wifi_rssi")
-	{
-		return String(rssi);
-	}
-	if (var == "wifi_channel")
-	{
-		return String(channel);
-	}
-	if (var == "wifi_mac")
-	{
-		return String(WiFi.macAddress());
-	}
-	if (var == "wifi_ip")
-	{
-		return String(WiFi.localIP().toString());
-	}
-	if (var == "lux")
-	{
-		return String(lux);
-	}
-	if (var == "clock_model")
-	{
-		return String(CLOCK_MODEL);
-	}
-#ifdef MQTTENABLED
-	if (var == "mqtt_server")
-	{
-		return String(config.mqttserver);
-	}
-	if (var == "mqtt_port")
-	{
-		return String(config.mqttport);
-	}
-#endif
-	return String();
-}
-
-void saveSchedules(const char *filename)
-{
-	// Delete existing file, otherwise the configuration is appended to the file
-	LittleFS.remove(filename);
-
-	File schedulefile = LittleFS.open(filename, "w");
-
-	if (!schedulefile)
-	{
-		Serial.println(F("Failed to create file"));
-		return;
-	}
-
-	// Allocate a temporary JsonDocument
-	// Don't forget to change the capacity to match your requirements.
-	// Use arduinojson.org/assistant to compute the capacity.
-
-	DynamicJsonDocument data(1536);
-	// Set the values in the document
-	for (int i = 0; i <= SCHEDULES - 1; i++)
-	{
-		JsonObject obj = data.createNestedObject();
-		obj["i"] = i;
-		obj["a"] = schedules[i].active;
-		obj["acd"] = schedules[i].activeclockdisplay;
-		obj["h"] = schedules[i].hour;
-		obj["m"] = schedules[i].minute;
-		/* JsonArray levels = obj.createNestedArray("weekdays");
-		levels.add(1);
-		levels.add(2); */
-	}
-
-	// Serialize JSON to file
-	if (serializeJson(data, schedulefile) == 0)
-	{
-		Serial.println(F("Failed to write to file"));
-	}
-
-	// Close the file
-	schedulefile.close();
-}
-
-void saveConfiguration(const char *filename)
-{
-	// Delete existing file, otherwise the configuration is appended to the file
-	LittleFS.remove(filename);
-
-	// Open file for writing
-	File configfile = LittleFS.open(filename, "w");
-
-	if (!configfile)
-	{
-		Serial.println(F("Failed to create file"));
-		return;
-	}
-
-	// Allocate a temporary JsonDocument
-	// Don't forget to change the capacity to match your requirements.
-	// Use arduinojson.org/assistant to compute the capacity.
-
-	DynamicJsonDocument doc(2048);
-
-	doc["acd"] = config.activeclockdisplay;
-	doc["tz"] = config.tz;
-	doc["ssid"] = config.ssid;
-	doc["wp"] = config.wifipassword;
-	doc["hn"] = config.hostname;
-	doc["ms"] = config.mqttserver;
-	doc["mp"] = config.mqttport;
-
-	Serial.print(config.tz);
-
-	// Serialize JSON to file
-	if (serializeJson(doc, configfile) == 0)
-	{
-		Serial.println(F("Failed to write to file"));
-	}
-
-	// Close the file
-	configfile.close();
-}
-
-void saveClockDisplays(const char *filename)
-{
-	// Delete existing file, otherwise the configuration is appended to the file
-	LittleFS.remove(filename);
-
-	// Open file for writing
-	File configfile = LittleFS.open(filename, "w");
-
-	if (!configfile)
-	{
-		Serial.println(F("Failed to create file"));
-		return;
-	}
-
-	// Allocate a temporary JsonDocument
-	// Don't forget to change the capacity to match your requirements.
-	// Use arduinojson.org/assistant to compute the capacity.
-
-	DynamicJsonDocument data(2048);
-
-	// Set the values in the document
-	for (int i = 0; i <= CLOCK_DISPLAYS - 1; i++)
-
-	{
-		JsonObject obj = data.createNestedObject();
-		obj["i"] = i;
-		obj["bgc"] = clockdisplays[i].backgroundColor;
-		obj["hmc"] = clockdisplays[i].hourMarkColor;
-		obj["hc"] = clockdisplays[i].hourColor;
-		obj["mc"] = clockdisplays[i].minuteColor;
-		obj["sc"] = clockdisplays[i].secondColor;
-		obj["ms"] = clockdisplays[i].showms;
-		obj["s"] = clockdisplays[i].showseconds;
-		obj["ab"] = clockdisplays[i].autobrightness;
-		obj["bn"] = clockdisplays[i].brightness;
-		obj["rb"] = clockdisplays[i].rainbowgb;
-	}
-
-	// Serialize JSON to file
-	if (serializeJson(data, configfile) == 0)
-	{
-		Serial.println(F("Failed to write to file"));
-	}
-
-	// Close the file
-	configfile.close();
-}
-
-//Rotate clock display
-int rotate(int nr)
-{
-	if ((nr + ROTATE_LEDS) >= 60)
-	{
-		return (nr + ROTATE_LEDS) - NUM_LEDS;
-	}
-	else
-	{
-		return (nr + ROTATE_LEDS);
-	}
-}
-
-void scanWifi(String ssid)
-{
-
-	byte numSsid = WiFi.scanNetworks();
-	rssi = -999;
-	for (int thisNet = 0; thisNet < numSsid; thisNet++)
-	{
-		//Serial.println(WiFi.SSID(thisNet));
-		if (WiFi.SSID(thisNet) == ssid)
-		{
-			Serial.println("found SSID: " + WiFi.SSID(thisNet));
-			Serial.println("rssi: " + String(WiFi.RSSI(thisNet)));
-			Serial.println("channel: " + String(WiFi.channel(thisNet)));
-			if (WiFi.RSSI(thisNet) > rssi)
-			{
-				memcpy(bssid, WiFi.BSSID(thisNet), 6);
-				channel = WiFi.channel(thisNet);
-				rssi = WiFi.RSSI(thisNet);
-			}
-		}
-	}
-}
-
-boolean checkConnection()
-{
-	int count = 0;
-	Serial.print("Waiting for Wi-Fi connection");
-	while (count < 30)
-	{
-		leds[rotate(count)] = CRGB::White;
-		FastLED.show();
-
-		if (WiFi.status() == WL_CONNECTED)
-		{
-			Serial.println();
-			Serial.println("Connected!");
-			leds[rotate(count)] = CRGB::Green;
-			FastLED.show();
-			return (true);
-		}
-		delay(500);
-		Serial.print(".");
-		count++;
-	}
-	Serial.println("Timed out.");
-	leds[rotate(count)] = CRGB::Red;
-	FastLED.show();
-	delay(5000);
-	return false;
-}
-
-const uint8_t MSG_BUFFER_SIZE = 20;
-char m_msg_buffer[MSG_BUFFER_SIZE];
-
-const uint8_t TOPIC_BUFFER_SIZE = 64;
-char m_topic_buffer[TOPIC_BUFFER_SIZE];
-
-#ifdef MQTTENABLED
-PubSubClient mqttclient(espClient);
+//PubSubClient mqttclient(espClient);
 
 // function called to adapt the brightness and the color of the led
 void setHourColor(uint8_t p_red, uint8_t p_green, uint8_t p_blue)
@@ -594,13 +281,13 @@ void publishRGBminuteColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
 	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d,%d,%d", rgb_red, rgb_green, rgb_blue);
 	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_MINUTE_RGB_STATE_TOPIC);
 
-	mqttclient.publish(m_topic_buffer, m_msg_buffer, true);
+	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
 }
 void publishRGBminuteBrightness()
 {
 	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d", minute_brightness);
 	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_MINUTE_BRIGHTNESS_STATE_TOPIC);
-	mqttclient.publish(m_topic_buffer, m_msg_buffer, true);
+	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
 }
 void publishRGBminuteState()
 
@@ -608,12 +295,12 @@ void publishRGBminuteState()
 	if (minute_state)
 	{
 		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_MINUTE_STATE_TOPIC);
-		mqttclient.publish(m_topic_buffer, LIGHT_ON, true);
+		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_ON);
 	}
 	else
 	{
 		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_MINUTE_STATE_TOPIC);
-		mqttclient.publish(m_topic_buffer, LIGHT_OFF, true);
+		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_OFF);
 	}
 }
 
@@ -621,7 +308,7 @@ void publishRGBsecondBrightness()
 {
 	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d", second_brightness);
 	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_SECOND_BRIGHTNESS_STATE_TOPIC);
-	mqttclient.publish(m_topic_buffer, m_msg_buffer, true);
+	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
 }
 void publishRGBsecondColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
 {
@@ -630,7 +317,7 @@ void publishRGBsecondColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
 
 	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d,%d,%d", rgb_red, rgb_green, rgb_blue);
 	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_SECOND_RGB_STATE_TOPIC);
-	mqttclient.publish(m_topic_buffer, m_msg_buffer, true);
+	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
 }
 void publishRGBsecondState()
 
@@ -640,12 +327,12 @@ void publishRGBsecondState()
 	{
 
 		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_SECOND_STATE_TOPIC);
-		mqttclient.publish(m_topic_buffer, LIGHT_ON, true);
+		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_ON);
 	}
 	else
 	{
 		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_SECOND_STATE_TOPIC);
-		mqttclient.publish(m_topic_buffer, LIGHT_OFF, true);
+		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_OFF);
 	}
 }
 
@@ -653,7 +340,7 @@ void publishRGBhourBrightness()
 {
 	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d", hour_brightness);
 	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_HOUR_BRIGHTNESS_STATE_TOPIC);
-	mqttclient.publish(m_topic_buffer, m_msg_buffer, true);
+	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
 }
 void publishRGBhourColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
 {
@@ -661,7 +348,7 @@ void publishRGBhourColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
 	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d,%d,%d", rgb_red, rgb_green, rgb_blue);
 	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_HOUR_RGB_STATE_TOPIC);
 
-	mqttclient.publish(m_topic_buffer, m_msg_buffer, true);
+	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
 }
 void publishRGBhourState()
 
@@ -669,12 +356,12 @@ void publishRGBhourState()
 	if (hour_state)
 	{
 		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_HOUR_STATE_TOPIC);
-		mqttclient.publish(m_topic_buffer, LIGHT_ON, true);
+		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_ON);
 	}
 	else
 	{
 		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_HOUR_STATE_TOPIC);
-		mqttclient.publish(m_topic_buffer, LIGHT_OFF, true);
+		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_OFF);
 	}
 }
 
@@ -682,26 +369,26 @@ void publishRGBbackgroundBrightness()
 {
 	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d", background_brightness);
 	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_BACKGROUND_BRIGHTNESS_STATE_TOPIC);
-	mqttclient.publish(m_topic_buffer, m_msg_buffer, true);
+	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
 }
 void publishRGBbackgroundColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
 {
 
 	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d,%d,%d", rgb_red, rgb_green, rgb_blue);
 	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_BACKGROUND_RGB_STATE_TOPIC);
-	mqttclient.publish(m_topic_buffer, m_msg_buffer, true);
+	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
 }
 void publishRGBbackgroundState()
 {
 	if (background_state)
 	{
 		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_BACKGROUND_STATE_TOPIC);
-		mqttclient.publish(m_topic_buffer, LIGHT_ON, true);
+		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_ON);
 	}
 	else
 	{
 		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_BACKGROUND_STATE_TOPIC);
-		mqttclient.publish(m_topic_buffer, LIGHT_OFF, true);
+		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_OFF);
 	}
 }
 
@@ -709,31 +396,126 @@ void publishRGBhourmarksBrightness()
 {
 	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d", hourmarks_brightness);
 	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_HOURMARKS_BRIGHTNESS_STATE_TOPIC);
-	mqttclient.publish(m_topic_buffer, m_msg_buffer, true);
+	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
 }
 void publishRGBhourmarksColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
 {
 
 	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d,%d,%d", rgb_red, rgb_green, rgb_blue);
 	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_HOURMARKS_RGB_STATE_TOPIC);
-	mqttclient.publish(m_topic_buffer, m_msg_buffer, true);
+	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
 }
 void publishRGBhourmarksState()
 {
 	if (hourmarks_state)
 	{
 		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_HOURMARKS_STATE_TOPIC);
-		mqttclient.publish(m_topic_buffer, LIGHT_ON, true);
+		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_ON);
 	}
 	else
 	{
 		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_HOURMARKS_STATE_TOPIC);
-		mqttclient.publish(m_topic_buffer, LIGHT_OFF, true);
+		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_OFF);
 	}
 }
 
-void callback(char *p_topic, byte *p_payload, unsigned int p_length)
+void connectToMqtt()
 {
+	Serial.println("Connecting to MQTT...");
+	mqttClient.connect();
+}
+
+void onWifiConnect(const WiFiEventStationModeGotIP &event)
+{
+	Serial.println("Connected to Wi-Fi.");
+	connectToMqtt();
+}
+
+void onWifiDisconnect(const WiFiEventStationModeDisconnected &event)
+{
+	Serial.println("Disconnected from Wi-Fi.");
+	mqttReconnectTimer.detach(); // ensure we don't reconnect to MQTT while reconnecting to Wi-Fi
+								 //wifiReconnectTimer.once(2, connectToWifi);
+}
+
+void onMqttDisconnect(AsyncMqttClientDisconnectReason reason)
+{
+	MQTTConnected = false;
+#ifdef MQTT_DEBUG
+	Serial.println("Disconnected from MQTT.");
+#endif
+
+	if (WiFi.isConnected())
+	{
+		mqttReconnectTimer.once(2, connectToMqtt);
+	}
+}
+
+void onMqttPublish(uint16_t packetId)
+{
+#ifdef MQTT_DEBUG
+	Serial.println("Publish acknowledged.");
+	Serial.print("  packetId: ");
+	Serial.println(packetId);
+#endif
+}
+
+void onMqttConnect(bool sessionPresent)
+{
+	MQTTConnected = true;
+#ifdef MQTT_DEBUG
+	Serial.println("Connected to MQTT.");
+	Serial.print("Session present: ");
+	Serial.println(sessionPresent);
+#endif
+	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, "/#");
+	uint16_t packetIdSub = mqttClient.subscribe(m_topic_buffer, 0);
+#ifdef MQTT_DEBUG
+	Serial.print("Subscribing at QoS 0, packetId: ");
+	Serial.println(packetIdSub);
+#endif
+	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, "/status/");
+	mqttClient.publish(m_topic_buffer, 0, true, "Online");
+	/* Serial.println("Publishing at QoS 0");
+  uint16_t packetIdPub1 = mqttClient.publish("mdg/test/lol", 1, true, "test 2");
+  Serial.print("Publishing at QoS 1, packetId: ");
+  Serial.println(packetIdPub1);
+  uint16_t packetIdPub2 = mqttClient.publish("mdg/test/lol", 2, true, "test 3");
+  Serial.print("Publishing at QoS 2, packetId: ");
+  Serial.println(packetIdPub2); */
+}
+
+void onMqttSubscribe(uint16_t packetId, uint8_t qos)
+{
+#ifdef MQTT_DEBUG
+	Serial.println("Subscribe acknowledged.");
+	Serial.print("  packetId: ");
+	Serial.println(packetId);
+	Serial.print("  qos: ");
+	Serial.println(qos);
+#endif
+}
+
+void onMqttMessage(char *p_topic, char *p_payload, AsyncMqttClientMessageProperties properties, size_t p_length, size_t index, size_t total)
+{
+#ifdef MQTT_DEBUG
+	Serial.println("Publish received.");
+	Serial.print("  topic: ");
+	Serial.println(p_topic);
+	Serial.print("  qos: ");
+	Serial.println(properties.qos);
+	Serial.print("  dup: ");
+	Serial.println(properties.dup);
+	Serial.print("  retain: ");
+	Serial.println(properties.retain);
+	Serial.print("  len: ");
+	Serial.println(p_length);
+	Serial.print("  index: ");
+	Serial.println(index);
+	Serial.print("  total: ");
+	Serial.println(total);
+#endif
+
 	String payload;
 	for (uint8_t i = 0; i < p_length; i++)
 	{
@@ -1119,31 +901,326 @@ void callback(char *p_topic, byte *p_payload, unsigned int p_length)
 	}
 }
 
-boolean MQTTreconnect()
+// Replaces placeholder with section in your web page
+String processor(const String &var)
 {
-	Serial.println("INFO: Attempting MQTT connection...");
-	// Attempt to connect
-	if (mqttclient.connect(config.hostname, "admin", "44s8BA4H"))
+
+	if (var == "sliderBrightnessValue")
 	{
-		Serial.println("INFO: connected");
+		return String(sliderBrightnessValue);
+	}
+	if (var == "LDRValue")
+	{
+		return String(lightReading);
+	}
+	if (var == "backGroundColor")
+	{
+		return String(inttoHex(clockdisplays[config.activeclockdisplay].backgroundColor, 6));
+	}
+	if (var == "hourMarkColor")
+	{
+		return String(inttoHex(clockdisplays[config.activeclockdisplay].hourMarkColor, 6));
+	}
+	if (var == "hourColor")
+	{
+		return String(inttoHex(clockdisplays[config.activeclockdisplay].hourColor, 6));
+	}
+	if (var == "minuteColor")
+	{
+		return String(inttoHex(clockdisplays[config.activeclockdisplay].minuteColor, 6));
+	}
+	if (var == "secondColor")
+	{
 
-		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, "/#");
-		Serial.println("Subscribe to: " + String(m_topic_buffer));
-		mqttclient.subscribe(m_topic_buffer);
+		return String(inttoHex(clockdisplays[config.activeclockdisplay].secondColor, 6));
+	}
+	if (var == "showms")
+	{
+		if (clockdisplays[config.activeclockdisplay].showms != 0)
+		{
+			return String("checked");
+		}
+	}
+	if (var == "showseconds")
+	{
+		if (clockdisplays[config.activeclockdisplay].showseconds != 0)
+		{
+			return String("checked");
+		}
+	}
+	if (var == "autobrightness")
+	{
+		if (clockdisplays[config.activeclockdisplay].autobrightness != 0)
+		{
+			return String("checked");
+		}
+	}
+	if (var == "activeclockdisplay")
+	{
+		return String(config.activeclockdisplay);
+	}
+	if (var == "ssid")
+	{
+		return String(config.ssid);
+	}
+	if (var == "wifipassword")
+	{
 
-		//snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d,%d,%d", ltor(clockdisplays[config.activeclockdisplay].backgroundColor), ltog(clockdisplays[config.activeclockdisplay].backgroundColor), ltob(clockdisplays[config.activeclockdisplay].backgroundColor));
-		//snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_BACKGROUND_RGB_STATE_TOPIC);
-		//mqttclient.publish(m_topic_buffer, m_msg_buffer, true);
+		if (String(config.wifipassword).isEmpty())
+		{
+			return String(config.wifipassword);
+		}
+		else
+		{
+			return String("********");
+		}
+	}
+	if (var == "hostname")
+	{
+		return String(config.hostname);
+	}
+	if (var == "tz")
+	{
+		return String(config.tz);
+	}
+	if (var == "compile_date_time")
+	{
+		return String(COMPILE_DATE);
+	}
+	if (var == "software_version")
+	{
+		return String(SOFTWARE_VERSION);
+	}
+	if (var == "wifi_rssi")
+	{
+		return String(rssi);
+	}
+	if (var == "wifi_channel")
+	{
+		return String(channel);
+	}
+	if (var == "wifi_mac")
+	{
+		return String(WiFi.macAddress());
+	}
+	if (var == "wifi_ip")
+	{
+		return String(WiFi.localIP().toString());
+	}
+	if (var == "lux")
+	{
+		return String(lux);
+	}
+	if (var == "clock_model")
+	{
+		return String(CLOCK_MODEL);
+	}
+#ifdef MQTTENABLED
+	if (var == "mqtt_server")
+	{
+		return String(config.mqttserver);
+	}
+	if (var == "mqtt_port")
+	{
+		return String(config.mqttport);
+	}
+#endif
+	return String();
+}
+
+void saveSchedules(const char *filename)
+{
+	// Delete existing file, otherwise the configuration is appended to the file
+	LittleFS.remove(filename);
+
+	File schedulefile = LittleFS.open(filename, "w");
+
+	if (!schedulefile)
+	{
+		Serial.println(F("Failed to create file"));
+		return;
+	}
+
+	// Allocate a temporary JsonDocument
+	// Don't forget to change the capacity to match your requirements.
+	// Use arduinojson.org/assistant to compute the capacity.
+
+	DynamicJsonDocument data(1536);
+	// Set the values in the document
+	for (int i = 0; i <= SCHEDULES - 1; i++)
+	{
+		JsonObject obj = data.createNestedObject();
+		obj["i"] = i;
+		obj["a"] = schedules[i].active;
+		obj["acd"] = schedules[i].activeclockdisplay;
+		obj["h"] = schedules[i].hour;
+		obj["m"] = schedules[i].minute;
+		/* JsonArray levels = obj.createNestedArray("weekdays");
+		levels.add(1);
+		levels.add(2); */
+	}
+
+	// Serialize JSON to file
+	if (serializeJson(data, schedulefile) == 0)
+	{
+		Serial.println(F("Failed to write to file"));
+	}
+
+	// Close the file
+	schedulefile.close();
+}
+
+void saveConfiguration(const char *filename)
+{
+	// Delete existing file, otherwise the configuration is appended to the file
+	LittleFS.remove(filename);
+
+	// Open file for writing
+	File configfile = LittleFS.open(filename, "w");
+
+	if (!configfile)
+	{
+		Serial.println(F("Failed to create file"));
+		return;
+	}
+
+	// Allocate a temporary JsonDocument
+	// Don't forget to change the capacity to match your requirements.
+	// Use arduinojson.org/assistant to compute the capacity.
+
+	DynamicJsonDocument doc(2048);
+
+	doc["acd"] = config.activeclockdisplay;
+	doc["tz"] = config.tz;
+	doc["ssid"] = config.ssid;
+	doc["wp"] = config.wifipassword;
+	doc["hn"] = config.hostname;
+	doc["ms"] = config.mqttserver;
+	doc["mp"] = config.mqttport;
+
+	Serial.print(config.tz);
+
+	// Serialize JSON to file
+	if (serializeJson(doc, configfile) == 0)
+	{
+		Serial.println(F("Failed to write to file"));
+	}
+
+	// Close the file
+	configfile.close();
+}
+
+void saveClockDisplays(const char *filename)
+{
+	// Delete existing file, otherwise the configuration is appended to the file
+	LittleFS.remove(filename);
+
+	// Open file for writing
+	File configfile = LittleFS.open(filename, "w");
+
+	if (!configfile)
+	{
+		Serial.println(F("Failed to create file"));
+		return;
+	}
+
+	// Allocate a temporary JsonDocument
+	// Don't forget to change the capacity to match your requirements.
+	// Use arduinojson.org/assistant to compute the capacity.
+
+	DynamicJsonDocument data(2048);
+
+	// Set the values in the document
+	for (int i = 0; i <= CLOCK_DISPLAYS - 1; i++)
+
+	{
+		JsonObject obj = data.createNestedObject();
+		obj["i"] = i;
+		obj["bgc"] = clockdisplays[i].backgroundColor;
+		obj["hmc"] = clockdisplays[i].hourMarkColor;
+		obj["hc"] = clockdisplays[i].hourColor;
+		obj["mc"] = clockdisplays[i].minuteColor;
+		obj["sc"] = clockdisplays[i].secondColor;
+		obj["ms"] = clockdisplays[i].showms;
+		obj["s"] = clockdisplays[i].showseconds;
+		obj["ab"] = clockdisplays[i].autobrightness;
+		obj["bn"] = clockdisplays[i].brightness;
+		obj["rb"] = clockdisplays[i].rainbowgb;
+	}
+
+	// Serialize JSON to file
+	if (serializeJson(data, configfile) == 0)
+	{
+		Serial.println(F("Failed to write to file"));
+	}
+
+	// Close the file
+	configfile.close();
+}
+
+//Rotate clock display
+int rotate(int nr)
+{
+	if ((nr + ROTATE_LEDS) >= 60)
+	{
+		return (nr + ROTATE_LEDS) - NUM_LEDS;
 	}
 	else
 	{
-		Serial.print("ERROR: failed, rc=");
-		Serial.print(mqttclient.state());
-		Serial.println("DEBUG: try again in 5 seconds");
+		return (nr + ROTATE_LEDS);
 	}
-	return mqttclient.connected();
 }
-#endif
+
+void scanWifi(String ssid)
+{
+
+	byte numSsid = WiFi.scanNetworks();
+	rssi = -999;
+	for (int thisNet = 0; thisNet < numSsid; thisNet++)
+	{
+		//Serial.println(WiFi.SSID(thisNet));
+		if (WiFi.SSID(thisNet) == ssid)
+		{
+			Serial.println("found SSID: " + WiFi.SSID(thisNet));
+			Serial.println("rssi: " + String(WiFi.RSSI(thisNet)));
+			Serial.println("channel: " + String(WiFi.channel(thisNet)));
+			if (WiFi.RSSI(thisNet) > rssi)
+			{
+				memcpy(bssid, WiFi.BSSID(thisNet), 6);
+				channel = WiFi.channel(thisNet);
+				rssi = WiFi.RSSI(thisNet);
+			}
+		}
+	}
+}
+
+boolean checkConnection()
+{
+	int count = 0;
+	Serial.print("Waiting for Wi-Fi connection");
+	while (count < 30)
+	{
+		leds[rotate(count)] = CRGB::White;
+		FastLED.show();
+
+		if (WiFi.status() == WL_CONNECTED)
+		{
+			Serial.println();
+			Serial.println("Connected!");
+			leds[rotate(count)] = CRGB::Green;
+			FastLED.show();
+			return (true);
+		}
+		delay(500);
+		Serial.print(".");
+		count++;
+	}
+	Serial.println("Timed out.");
+	leds[rotate(count)] = CRGB::Red;
+	FastLED.show();
+	delay(5000);
+	return false;
+}
 
 void setup()
 {
@@ -1264,13 +1341,29 @@ void setup()
 	Serial.println(jsonClkdisplaysfile); */
 
 	FastLED.setBrightness(128);
-	FastLED.setMaxPowerInVoltsAndMilliamps(5, 1000); //max 1 amp power usage
+	FastLED.setMaxPowerInVoltsAndMilliamps(NEOPIXEL_VOLTAGE, NEOPIXEL_MILLIAMPS); //max 1 amp power usage
 
 	FastLED.addLeds<SK6812, DATA_PIN, GRB>(leds, NUM_LEDS) // GRB ordering is typical
 														   //.setCorrection(TypicalLEDStrip);
 		.setCorrection(0xFFFFFF);						   //No correction
 	FastLED.setMaxRefreshRate(0);
 	//FastLED.setDither( 0 );
+
+	static const char mqttUser[] = "admin";
+	static const char mqttPassword[] = "44s8BA4H";
+
+	//MQTT
+	mqttClient.onConnect(onMqttConnect);
+	mqttClient.onDisconnect(onMqttDisconnect);
+	mqttClient.onPublish(onMqttPublish);
+	mqttClient.onMessage(onMqttMessage);
+	mqttClient.onSubscribe(onMqttSubscribe);
+	mqttClient.setCredentials(mqttUser, mqttPassword);
+	mqttClient.setServer(config.mqttserver, config.mqttport);
+
+	//WIFI
+	wifiConnectHandler = WiFi.onStationModeGotIP(onWifiConnect);
+	wifiDisconnectHandler = WiFi.onStationModeDisconnected(onWifiDisconnect);
 
 	WiFi.mode(WIFI_STA);
 
@@ -1288,21 +1381,15 @@ void setup()
 		WiFi.begin(config.ssid, config.wifipassword);
 	}
 
-	// Uncomment the line below to see what it does behind the scenes
-	//setDebug(INFO);
 	if (checkConnection())
 	{
 		wifiConnected = true;
-		//When there is a wifi connection get time from NTP
+		//Only when there is a wifi connection get time from NTP
 		waitForSync();
 	}
 	else
 	{
 		wifiConnected = false;
-
-		//WiFi.disconnect();
-
-		//WiFi.softAPdisconnect (true); //Disconnect softAP
 	}
 
 	byte mac[6];
@@ -1319,10 +1406,10 @@ void setup()
 	Serial.println("rssi: " + String(WiFi.RSSI()));
 	Serial.println("Channel: " + String(channel));
 	Serial.println("IP Address: " + WiFi.localIP().toString());
-#ifdef MQTTENABLED
 	Serial.println("MQTT Server: " + String(config.mqttserver));
 	Serial.println("MQTT Port: " + String(config.mqttport));
-#endif
+	Serial.println("MQTT Connected: " + String(MQTTConnected));
+
 	//Serial.println("starting AP");
 	//default IP = 192.168.4.1
 	//WiFi.mode(WIFI_AP);
@@ -1338,11 +1425,6 @@ void setup()
 		Serial.println("Error setting up MDNS responder!");
 	}
 
-#ifdef MQTTENABLED
-	mqttclient.setServer(config.mqttserver,config.mqttport);
-	mqttclient.setCallback(callback);
-
-#endif
 	// Provide official timezone names
 	// https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 	if (!tz.setCache(0))
@@ -1712,12 +1794,12 @@ void setup()
 
 						  p->value().toCharArray(config.hostname, sizeof(config.hostname));
 					  }
-					   else if (p->name() == "mqtt_server")
+					  else if (p->name() == "mqtt_server")
 					  {
 
 						  p->value().toCharArray(config.mqttserver, sizeof(config.mqttserver));
 					  }
-					   else if (p->name() == "mqtt_port")
+					  else if (p->name() == "mqtt_port")
 					  {
 
 						  config.mqttport = p->value().toInt();
@@ -1744,48 +1826,6 @@ void setup()
 
 void loop()
 {
-#ifdef MQTTENABLED
-
-	if (WiFi.isConnected())
-	{
-
-		if (strlen(config.mqttserver) != 0)
-		{
-			if (!mqttclient.connected())
-			{
-				long now = millis();
-				//Serial.print("Now: ");
-				//Serial.println(now);
-				//Serial.print("lastReconnectAttempt: ");
-				//Serial.println(lastReconnectAttempt);
-
-				if (now - lastReconnectAttempt > 5000)
-				{
-					Serial.println("Try to reconnect MQTT");
-					lastReconnectAttempt = now;
-
-					// Attempt to MQTTreconnect
-					if (MQTTreconnect())
-					{
-						Serial.println("it seems we are connected to MQTT");
-						lastReconnectAttempt = 0;
-					}
-				}
-			}
-			else
-			{
-				// Client connected
-
-				mqttclient.loop();
-			}
-		}
-	}
-
-/* if (!WiFi.isConnected()){
-		Serial.println("Wifi disconnect");
-	} */
-#endif
-
 	currentMillis = millis();
 
 	events();
@@ -1874,6 +1914,7 @@ void loop()
 		//normal
 
 		leds[rotate(tz.second())] = clockdisplays[config.activeclockdisplay].secondColor;
+		//Serial.println(tz.second());
 	}
 
 	if (clockdisplays[config.activeclockdisplay].showms == 1)
