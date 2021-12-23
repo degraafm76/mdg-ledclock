@@ -201,11 +201,12 @@
                         <div id="id02"></div>
                         </p><br>
                         <p>
-                            <ons-input id="ssid" modifier="material" placeholder="SSID" value="%ssid%"></ons-input>
+                            <ons-input id="ssid" modifier="material" placeholder="SSID:" value="%ssid%" float>
+                            </ons-input>
                         </p>
                         <p>
-                            <ons-input id="wifipassword" modifier="material" type="password" placeholder="WiFi password"
-                                value="%wifipassword%"></ons-input>
+                            <ons-input id="wifipassword" modifier="material" type="password"
+                                placeholder="WiFi password:" value="%wifipassword%" float></ons-input>
                         </p>
                         <p style="margin-top: 30px; text-align: center;">
                             <ons-button onclick="getssid()">Scan Networks</ons-button>
@@ -220,8 +221,8 @@
                 <div class="content">
                     <div style="text-align: center; margin-top: 30px;">
                         <p>
-                            <ons-input id="hostname" modifier="material" placeholder="hostname" maxlength="16"
-                                value="%hostname%"></ons-input>
+                            <ons-input id="hostname" modifier="material" placeholder="Hostname:" maxlength="16"
+                                value="%hostname%" float></ons-input>
                         </p>
                     </div>
                 </div>
@@ -706,18 +707,35 @@
                     MQTT settings
                 </div>
                 <div class="content">
-                    <div style="text-align: center; margin-top: 10px;">
+                    <div style="text-align: left; margin-top: 10px;">
                         <p>
                         <div id="id02"></div>
                         </p><br>
                         <p>
-                            <ons-input id="mqtt_server" modifier="material" placeholder="MQTT Server" value="%mqtt_server%"></ons-input>
+                            <ons-input id="mqtt_server" modifier="material" placeholder="MQTT Server:"
+                                value="%mqtt_server%" float></ons-input>
                         </p>
                         <p>
-                            <ons-input id="mqtt_port" modifier="material" placeholder="MQTT port"
-                                value="%mqtt_port%"></ons-input>
+                            <ons-input id="mqtt_port" modifier="material" placeholder="MQTT port:" value="%mqtt_port%"
+                                float>
+                            </ons-input>
                         </p>
-                       
+                        <div>
+                            MQTT SSL/TLS:
+                        </div>
+                        <div>
+                            <ons-switch id="mqtt_tls" %mqtt_tls% %mqtt_tls_switch%></ons-switch>
+                        </div>
+                        <p>
+                            <ons-input id="mqtt_user" modifier="material" placeholder="MQTT user:" value="%mqtt_user%"
+                                maxlength="16" float>
+                            </ons-input>
+                        </p>
+                        <p>
+                            <ons-input id="mqtt_password" modifier="material" placeholder="MQTT password:" type="password"
+                                value="%mqtt_password%" maxlength="16" float></ons-input>
+                        </p>
+
                     </div>
                 </div>
             </ons-card>
@@ -974,6 +992,15 @@
         var hostname = encodeURIComponent(document.getElementById('hostname').value);
         var mqtt_server = encodeURIComponent(document.getElementById('mqtt_server').value);
         var mqtt_port = encodeURIComponent(document.getElementById('mqtt_port').value);
+        var mqtt_user = encodeURIComponent(document.getElementById('mqtt_user').value);
+        var mqtt_password = encodeURIComponent(document.getElementById('mqtt_password').value);
+        var mqtt_tls = encodeURIComponent(document.getElementById('mqtt_tls').value);
+
+        if (document.getElementById("mqtt_tls").checked == true) {
+            mqtt_tls = 1;
+        } else {
+            mqtt_tls = 0;
+        }
         var urlparams = '';
 
         if (hostname != '') {
@@ -982,12 +1009,22 @@
         if (tz != '') {
             urlparams += "&tz=" + tz;
         }
-        
-            urlparams += "&mqtt_server=" + mqtt_server;
-        
-        if (mqtt_port != ''){
+
+        urlparams += "&mqtt_server=" + mqtt_server;
+
+        if (mqtt_port != '') {
             urlparams += "&mqtt_port=" + mqtt_port;
         }
+        if (mqtt_user != '') {
+            urlparams += "&mqtt_user=" + mqtt_user;
+        }
+        if (mqtt_password != '' && mqtt_password != '********') {
+            urlparams += "&mqtt_password=" + mqtt_password;
+        }
+        if (mqtt_tls == 0 || mqtt_tls == 1) {
+            urlparams += "&mqtt_tls=" + mqtt_tls;
+        }
+
 
         var xhr = new XMLHttpRequest();
         if (ssid != '' && wifipassword != '' && wifipassword != '********') {

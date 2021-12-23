@@ -4,13 +4,13 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 #include <FastLED.h>
+#include <AsyncMqttClient.h>
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <AsyncElegantOTA.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <Ticker.h>
-#include <AsyncMqttClient.h>
 
 WiFiClient espClient;
 
@@ -168,8 +168,9 @@ struct Config
 	char hostname[17];
 	char mqttserver[64];
 	int mqttport;
-	char mqttuser[32];
-	char mqttpassword[32];
+	char mqttuser[17];
+	char mqttpassword[17];
+	int mqtttls;
 };
 
 typedef struct Clockdisplay
@@ -1015,7 +1016,6 @@ String processor(const String &var)
 	{
 		return String(CLOCK_MODEL);
 	}
-#ifdef MQTTENABLED
 	if (var == "mqtt_server")
 	{
 		return String(config.mqttserver);
@@ -1024,7 +1024,34 @@ String processor(const String &var)
 	{
 		return String(config.mqttport);
 	}
-#endif
+	if (var == "mqtt_tls")
+	{
+		return String(config.mqtttls);
+	}
+	if (var == "mqtt_tls_switch")
+	{
+		if (config.mqtttls == 1)
+		{
+			return String("checked");
+		}
+	}
+	if (var == "mqtt_user")
+	{
+		return String(config.mqttuser);
+	}
+	if (var == "mqtt_password")
+	{
+
+		if (String(config.mqttpassword).isEmpty())
+		{
+			return String(config.mqttpassword);
+		}
+		else
+		{
+			return String("********");
+		}
+	}
+
 	return String();
 }
 
@@ -1097,6 +1124,9 @@ void saveConfiguration(const char *filename)
 	doc["hn"] = config.hostname;
 	doc["ms"] = config.mqttserver;
 	doc["mp"] = config.mqttport;
+	doc["mu"] = config.mqttuser;
+	doc["mpw"] = config.mqttpassword;
+	doc["mt"] = config.mqtttls;
 
 	Serial.print(config.tz);
 
@@ -1250,15 +1280,17 @@ void setup()
 	// Allocate a temporary JsonDocument
 	// Don't forget to change the capacity to match your requirements.
 	// Use arduinojson.org/assistant to compute the capacity.
-	DynamicJsonDocument config_doc(256);
+	DynamicJsonDocument config_doc(512);
 
 	jsonConfigfile = (configfile.readString());
 
+	Serial.println(jsonConfigfile);
+
 	// Deserialize the JSON document
 	DeserializationError error_config = deserializeJson(config_doc, jsonConfigfile);
-	if (error_config)
+	if (error_config) 
 		Serial.println(F("Failed to read config.json file, using default configuration"));
-
+	
 	configfile.close(); //close file
 
 	///// Schedule file /////
@@ -1333,7 +1365,13 @@ void setup()
 	strlcpy(config.wifipassword, config_doc["wp"] | "", sizeof(config.wifipassword));
 	strlcpy(config.hostname, config_doc["hn"] | "ledclock", sizeof(config.hostname));
 	strlcpy(config.mqttserver, config_doc["ms"] | "", sizeof(config.mqttserver));
+	strlcpy(config.mqttuser, config_doc["mu"] | "", sizeof(config.mqttuser));
+	strlcpy(config.mqttpassword, config_doc["mpw"] | "", sizeof(config.mqttpassword));
 	config.mqttport = config_doc["mp"] | 1883;
+	config.mqtttls = config_doc["mt"] | 0;
+
+	Serial.print("TLSconfig:");
+	Serial.println(config.mqtttls);
 
 	/*
 	Serial.println(jsonSchedulefile); 	
@@ -1349,8 +1387,8 @@ void setup()
 	FastLED.setMaxRefreshRate(0);
 	//FastLED.setDither( 0 );
 
-	static const char mqttUser[] = "admin";
-	static const char mqttPassword[] = "44s8BA4H";
+	//static const char mqttUser[] = "admin";
+	//static const char mqttPassword[] = "44s8BA4H";
 
 	//MQTT
 	mqttClient.onConnect(onMqttConnect);
@@ -1358,7 +1396,16 @@ void setup()
 	mqttClient.onPublish(onMqttPublish);
 	mqttClient.onMessage(onMqttMessage);
 	mqttClient.onSubscribe(onMqttSubscribe);
-	mqttClient.setCredentials(mqttUser, mqttPassword);
+	mqttClient.setCredentials(config.mqttuser, config.mqttpassword);
+	mqttClient.setClientId(config.hostname);
+	if (config.mqtttls == 1)
+	{
+		Serial.println("Secure MQTT");
+		mqttClient.setSecure(true);
+	}
+	else {
+		Serial.println("Insecure MQTT");
+	}
 	mqttClient.setServer(config.mqttserver, config.mqttport);
 
 	//WIFI
@@ -1803,6 +1850,22 @@ void setup()
 					  {
 
 						  config.mqttport = p->value().toInt();
+						  Serial.println(p->value().toInt());
+					  }
+					  else if (p->name() == "mqtt_user")
+					  {
+
+						  p->value().toCharArray(config.mqttuser, sizeof(config.mqttuser));
+					  }
+					  else if (p->name() == "mqtt_password")
+					  {
+
+						  p->value().toCharArray(config.mqttpassword, sizeof(config.mqttpassword));
+					  }
+					  else if (p->name() == "mqtt_tls")
+					  {
+
+						  config.mqtttls = p->value().toInt();
 						  Serial.println(p->value().toInt());
 					  }
 					  else if (p->name() == "tz")
