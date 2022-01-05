@@ -7,14 +7,18 @@
 #include <AsyncMqttClient.h>
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <AsyncElegantOTA.h>
+//#include <AsyncElegantOTA.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <Ticker.h>
+#include <mdg_ledr_js.h>
+#include <mdg_ledr_css.h>
+#include <index_html.h>
+#include <fonts.h>
 
 WiFiClient espClient;
 
-#define SOFTWARE_VERSION "1.0.0"		   // Software version
+#define SOFTWARE_VERSION "1.2.0"		   // Software version
 #define CLOCK_MODEL "MDG Ledclock model 1" // Clock Model
 #define NUM_LEDS 60						   // How many leds are in the clock?
 #define ROTATE_LEDS 30					   // Rotate leds by this number. Led ring is connected upside down
@@ -28,7 +32,7 @@ WiFiClient espClient;
 #define CLOCK_DISPLAYS 8				   // Nr of user defined clock displays
 #define SCHEDULES 12					   // Nr of user defined schedules
 #define AP_NAME "MDG-Ledclock1"			   // Name of the AP when WIFI is not setup or connected
-//#define MQTT_DEBUG					   // MQTT debug enabled
+//#define MQTT_DEBUG						   // MQTT debug enabled
 #define COMPILE_DATE __DATE__ " " __TIME__ // Compile date/time
 
 //mqtt async
@@ -51,7 +55,7 @@ unsigned long currentMillis;
 boolean wifiConnected = false; // Variable to store wifi connected state
 boolean MQTTConnected = false; // Variable to store wifi connected state
 unsigned char bssid[6];
-int channel;
+byte channel;
 int rssi = -999;
 float lightReading; // Variable to store the ambient light value
 float lux;			//LUX
@@ -161,16 +165,16 @@ String jsonClkdisplaysfile;
 
 struct Config
 {
-	int activeclockdisplay;
+	byte activeclockdisplay;
 	char tz[64];
 	char ssid[33];
 	char wifipassword[65];
 	char hostname[17];
 	char mqttserver[64];
 	int mqttport;
-	char mqttuser[17];
-	char mqttpassword[17];
-	int mqtttls;
+	char mqttuser[32];
+	char mqttpassword[32];
+	byte mqtttls;
 };
 
 typedef struct Clockdisplay
@@ -180,19 +184,19 @@ typedef struct Clockdisplay
 	int secondColor;
 	int backgroundColor;
 	int hourMarkColor;
-	int showms;
-	int showseconds;
-	int autobrightness;
+	byte showms;
+	byte showseconds;
+	byte autobrightness;
 	int brightness;
-	int rainbowgb;
+	byte backgroud_effect;
 } clockdisplay;
 
 typedef struct Schedule
 {
 	int hour;
 	int minute;
-	int activeclockdisplay;
-	int active;
+	byte activeclockdisplay;
+	byte active;
 
 } schedule;
 
@@ -422,19 +426,24 @@ void publishRGBhourmarksState()
 
 void connectToMqtt()
 {
-	Serial.println("Connecting to MQTT...");
+	//Serial.println("Connecting to MQTT...");
 	mqttClient.connect();
 }
 
 void onWifiConnect(const WiFiEventStationModeGotIP &event)
 {
+#ifdef MQTT_DEBUG
 	Serial.println("Connected to Wi-Fi.");
-	connectToMqtt();
+#endif
+	if (strlen(config.mqttserver))
+	{
+		connectToMqtt();
+	}
 }
 
 void onWifiDisconnect(const WiFiEventStationModeDisconnected &event)
 {
-	Serial.println("Disconnected from Wi-Fi.");
+	//Serial.println("Disconnected from Wi-Fi.");
 	mqttReconnectTimer.detach(); // ensure we don't reconnect to MQTT while reconnecting to Wi-Fi
 								 //wifiReconnectTimer.once(2, connectToWifi);
 }
@@ -960,30 +969,7 @@ String processor(const String &var)
 	{
 		return String(config.activeclockdisplay);
 	}
-	if (var == "ssid")
-	{
-		return String(config.ssid);
-	}
-	if (var == "wifipassword")
-	{
 
-		if (String(config.wifipassword).isEmpty())
-		{
-			return String(config.wifipassword);
-		}
-		else
-		{
-			return String("********");
-		}
-	}
-	if (var == "hostname")
-	{
-		return String(config.hostname);
-	}
-	if (var == "tz")
-	{
-		return String(config.tz);
-	}
 	if (var == "compile_date_time")
 	{
 		return String(COMPILE_DATE);
@@ -1016,39 +1002,16 @@ String processor(const String &var)
 	{
 		return String(CLOCK_MODEL);
 	}
-	if (var == "mqtt_server")
-	{
-		return String(config.mqttserver);
-	}
-	if (var == "mqtt_port")
-	{
-		return String(config.mqttport);
-	}
-	if (var == "mqtt_tls")
-	{
-		return String(config.mqtttls);
-	}
-	if (var == "mqtt_tls_switch")
-	{
-		if (config.mqtttls == 1)
-		{
-			return String("checked");
-		}
-	}
-	if (var == "mqtt_user")
-	{
-		return String(config.mqttuser);
-	}
-	if (var == "mqtt_password")
-	{
 
-		if (String(config.mqttpassword).isEmpty())
+	if (var == "mqtt_connected")
+	{
+		if (MQTTConnected)
 		{
-			return String(config.mqttpassword);
+			return String("Yes");
 		}
 		else
 		{
-			return String("********");
+			return String("No");
 		}
 	}
 
@@ -1064,7 +1027,7 @@ void saveSchedules(const char *filename)
 
 	if (!schedulefile)
 	{
-		Serial.println(F("Failed to create file"));
+		//Serial.println(F("Failed to create file"));
 		return;
 	}
 
@@ -1090,7 +1053,7 @@ void saveSchedules(const char *filename)
 	// Serialize JSON to file
 	if (serializeJson(data, schedulefile) == 0)
 	{
-		Serial.println(F("Failed to write to file"));
+		//Serial.println(F("Failed to write to file"));
 	}
 
 	// Close the file
@@ -1107,7 +1070,7 @@ void saveConfiguration(const char *filename)
 
 	if (!configfile)
 	{
-		Serial.println(F("Failed to create file"));
+		//Serial.println(F("Failed to create file"));
 		return;
 	}
 
@@ -1128,12 +1091,12 @@ void saveConfiguration(const char *filename)
 	doc["mpw"] = config.mqttpassword;
 	doc["mt"] = config.mqtttls;
 
-	Serial.print(config.tz);
+	//Serial.print(config.tz);
 
 	// Serialize JSON to file
 	if (serializeJson(doc, configfile) == 0)
 	{
-		Serial.println(F("Failed to write to file"));
+		//Serial.println(F("Failed to write to file"));
 	}
 
 	// Close the file
@@ -1150,7 +1113,7 @@ void saveClockDisplays(const char *filename)
 
 	if (!configfile)
 	{
-		Serial.println(F("Failed to create file"));
+		//Serial.println(F("Failed to create file"));
 		return;
 	}
 
@@ -1175,13 +1138,13 @@ void saveClockDisplays(const char *filename)
 		obj["s"] = clockdisplays[i].showseconds;
 		obj["ab"] = clockdisplays[i].autobrightness;
 		obj["bn"] = clockdisplays[i].brightness;
-		obj["rb"] = clockdisplays[i].rainbowgb;
+		obj["be"] = clockdisplays[i].backgroud_effect;
 	}
 
 	// Serialize JSON to file
 	if (serializeJson(data, configfile) == 0)
 	{
-		Serial.println(F("Failed to write to file"));
+		//Serial.println(F("Failed to write to file"));
 	}
 
 	// Close the file
@@ -1211,9 +1174,9 @@ void scanWifi(String ssid)
 		//Serial.println(WiFi.SSID(thisNet));
 		if (WiFi.SSID(thisNet) == ssid)
 		{
-			Serial.println("found SSID: " + WiFi.SSID(thisNet));
-			Serial.println("rssi: " + String(WiFi.RSSI(thisNet)));
-			Serial.println("channel: " + String(WiFi.channel(thisNet)));
+			//Serial.println("found SSID: " + WiFi.SSID(thisNet));
+			//Serial.println("rssi: " + String(WiFi.RSSI(thisNet)));
+			//Serial.println("channel: " + String(WiFi.channel(thisNet)));
 			if (WiFi.RSSI(thisNet) > rssi)
 			{
 				memcpy(bssid, WiFi.BSSID(thisNet), 6);
@@ -1252,6 +1215,67 @@ boolean checkConnection()
 	return false;
 }
 
+uint8_t gHue = 0; // rotating "base color" used by many of the patterns
+
+void addGlitter(fract8 chanceOfGlitter)
+{
+	if (random8() < chanceOfGlitter)
+	{
+		leds[random16(NUM_LEDS)] += CRGB::White;
+	}
+}
+void confetti()
+{
+	// random colored speckles that blink in and fade smoothly
+	fadeToBlackBy(leds, NUM_LEDS, 10);
+	int pos = random16(NUM_LEDS);
+	leds[pos] += CHSV(gHue + random8(64), 200, 255);
+}
+
+void juggle()
+{
+	// eight colored dots, weaving in and out of sync with each other
+	fadeToBlackBy(leds, NUM_LEDS, 20);
+	byte dothue = 0;
+	for (int i = 0; i < 8; i++)
+	{
+		leds[beatsin16(i + 7, 0, NUM_LEDS - 1)] |= CHSV(dothue, 200, 255);
+		dothue += 32;
+	}
+}
+void bpm()
+{
+	// colored stripes pulsing at a defined Beats-Per-Minute (BPM)
+	uint8_t BeatsPerMinute = 62;
+	CRGBPalette16 palette = PartyColors_p;
+	uint8_t beat = beatsin8(BeatsPerMinute, 64, 255);
+	for (int i = 0; i < NUM_LEDS; i++)
+	{ //9948
+		leds[i] = ColorFromPalette(palette, gHue + (i * 2), beat - gHue + (i * 10));
+	}
+}
+
+void sinelon()
+{
+	// a colored dot sweeping back and forth, with fading trails
+	fadeToBlackBy(leds, NUM_LEDS, 20);
+	int pos = beatsin16(13, 0, NUM_LEDS - 1);
+	leds[pos] += CHSV(gHue, 255, 192);
+}
+
+void rainbow()
+{
+	// FastLED's built-in rainbow generator
+	fill_rainbow(leds, NUM_LEDS, gHue, 7);
+}
+
+void rainbowWithGlitter()
+{
+	// built-in FastLED rainbow, plus some random sparkly glitter
+	rainbow();
+	addGlitter(80);
+}
+
 void setup()
 {
 
@@ -1267,7 +1291,7 @@ void setup()
 	// Initialize LittleFS
 	if (!LittleFS.begin())
 	{
-		Serial.println("An Error has occurred while mounting LittleFS");
+		//Serial.println("An Error has occurred while mounting LittleFS");
 		return;
 	}
 
@@ -1275,7 +1299,7 @@ void setup()
 	File configfile = LittleFS.open("/config.json", "r");
 	if (!configfile)
 	{
-		Serial.println("Config file open failed");
+		//Serial.println("Config file open failed");
 	}
 	// Allocate a temporary JsonDocument
 	// Don't forget to change the capacity to match your requirements.
@@ -1284,20 +1308,18 @@ void setup()
 
 	jsonConfigfile = (configfile.readString());
 
-	Serial.println(jsonConfigfile);
-
 	// Deserialize the JSON document
 	DeserializationError error_config = deserializeJson(config_doc, jsonConfigfile);
-	if (error_config) 
-		Serial.println(F("Failed to read config.json file, using default configuration"));
-	
-	configfile.close(); //close file
+	if (error_config)
+		//Serial.println(F("Failed to read config.json file, using default configuration"));
+
+		configfile.close(); //close file
 
 	///// Schedule file /////
 	File schedulefile = LittleFS.open("/schedules.json", "r");
 	if (!schedulefile)
 	{
-		Serial.println("Schedule file open failed");
+		//Serial.println("Schedule file open failed");
 	}
 	// Allocate a temporary JsonDocument
 	// Don't forget to change the capacity to match your requirements.
@@ -1309,9 +1331,9 @@ void setup()
 	// Deserialize the JSON document
 	DeserializationError error_schedule = deserializeJson(schedule_doc, jsonSchedulefile);
 	if (error_schedule)
-		Serial.println(F("Failed to read schedule.json file, using default configuration"));
+		//Serial.println(F("Failed to read schedule.json file, using default configuration"));
 
-	schedulefile.close(); //close file
+		schedulefile.close(); //close file
 
 	for (int i = 0; i <= SCHEDULES - 1; i++)
 	{
@@ -1326,7 +1348,7 @@ void setup()
 
 	if (!clkdisplaysfile)
 	{
-		Serial.println("Clock display file open failed");
+		//Serial.println("Clock display file open failed");
 	}
 
 	// Allocate a temporary JsonDocument
@@ -1339,9 +1361,9 @@ void setup()
 	// Deserialize the JSON document
 	DeserializationError error_clkdisplays = deserializeJson(clkdisplays_doc, jsonClkdisplaysfile);
 	if (error_clkdisplays)
-		Serial.println(F("Failed to read file clkdisplays.json, using default configuration"));
+		//Serial.println(F("Failed to read file clkdisplays.json, using default configuration"));
 
-	clkdisplaysfile.close(); //close file
+		clkdisplaysfile.close(); //close file
 
 	for (int i = 0; i <= CLOCK_DISPLAYS - 1; i++)
 	{
@@ -1355,7 +1377,7 @@ void setup()
 		clockdisplays[i].showseconds = clkdisplays_doc[i]["s"] | 1;
 		clockdisplays[i].autobrightness = clkdisplays_doc[i]["ab"] | 1;
 		clockdisplays[i].brightness = clkdisplays_doc[i]["bn"] | 128;
-		clockdisplays[i].rainbowgb = clkdisplays_doc[i]["rb"] | 0;
+		clockdisplays[i].backgroud_effect = clkdisplays_doc[i]["be"] | 0;
 	}
 
 	config.activeclockdisplay = config_doc["acd"] | 0;
@@ -1370,14 +1392,6 @@ void setup()
 	config.mqttport = config_doc["mp"] | 1883;
 	config.mqtttls = config_doc["mt"] | 0;
 
-	Serial.print("TLSconfig:");
-	Serial.println(config.mqtttls);
-
-	/*
-	Serial.println(jsonSchedulefile); 	
-	Serial.println(jsonConfigfile);
-	Serial.println(jsonClkdisplaysfile); */
-
 	FastLED.setBrightness(128);
 	FastLED.setMaxPowerInVoltsAndMilliamps(NEOPIXEL_VOLTAGE, NEOPIXEL_MILLIAMPS); //max 1 amp power usage
 
@@ -1387,24 +1401,25 @@ void setup()
 	FastLED.setMaxRefreshRate(0);
 	//FastLED.setDither( 0 );
 
-	//static const char mqttUser[] = "admin";
-	//static const char mqttPassword[] = "44s8BA4H";
-
 	//MQTT
 	mqttClient.onConnect(onMqttConnect);
 	mqttClient.onDisconnect(onMqttDisconnect);
 	mqttClient.onPublish(onMqttPublish);
 	mqttClient.onMessage(onMqttMessage);
 	mqttClient.onSubscribe(onMqttSubscribe);
-	mqttClient.setCredentials(config.mqttuser, config.mqttpassword);
+	if (strlen(config.mqttuser) != 0 && strlen(config.mqttpassword) != 0) //do not set credentials when MQTT user and MQTT password are empty
+	{
+		mqttClient.setCredentials(config.mqttuser, config.mqttpassword);
+	}
 	mqttClient.setClientId(config.hostname);
 	if (config.mqtttls == 1)
 	{
-		Serial.println("Secure MQTT");
+		//Serial.println("Secure MQTT");
 		mqttClient.setSecure(true);
 	}
-	else {
-		Serial.println("Insecure MQTT");
+	else
+	{
+		//Serial.println("Insecure MQTT");
 	}
 	mqttClient.setServer(config.mqttserver, config.mqttport);
 
@@ -1444,6 +1459,10 @@ void setup()
 	WiFi.macAddress(mac);
 
 	Serial.println("----------------- [Information] ------------------");
+	Serial.print("Clock Model: ");
+	Serial.println(CLOCK_MODEL);
+	Serial.print("Software version: ");
+	Serial.println(SOFTWARE_VERSION);
 	Serial.print("MAC address: ");
 	Serial.println(WiFi.macAddress());
 	String apPassword = String(mac[5], HEX) + String(mac[4], HEX) + String(mac[3], HEX) + String(mac[2] + mac[5], HEX);
@@ -1456,6 +1475,7 @@ void setup()
 	Serial.println("MQTT Server: " + String(config.mqttserver));
 	Serial.println("MQTT Port: " + String(config.mqttport));
 	Serial.println("MQTT Connected: " + String(MQTTConnected));
+	Serial.println("MQTT TLS: " + String(config.mqtttls));
 
 	//Serial.println("starting AP");
 	//default IP = 192.168.4.1
@@ -1468,8 +1488,8 @@ void setup()
 	}
 
 	if (!MDNS.begin(config.hostname))
-	{ // Start the mDNS responder for esp8266.local
-		Serial.println("Error setting up MDNS responder!");
+	{	// Start the mDNS responder for esp8266.local
+		//Serial.println("Error setting up MDNS responder!");
 	}
 
 	// Provide official timezone names
@@ -1482,19 +1502,67 @@ void setup()
 
 	// Webserver
 	// Route for root / web page
+
+	//server.serveStatic("/mdg-ledr.js", LittleFS, "/mdg-ledr.js", "max-age=31536000");
+	//server.serveStatic("/mdg-ledr.css", LittleFS, "mdg-ledr.css", "max-age=31536000");
+	//server.serveStatic("/mdi-font.ttf", LittleFS, "/mdi-font.ttf", "max-age=31536000");
+	//server.serveStatic("/mdi-font.woff", LittleFS, "/mdi-font.woff", "max-age=31536000");
+	//server.serveStatic("/mdi-font.woff2", LittleFS, "/mdi-font.woff2", "max-age=31536000");
+
+	// Webserver
+	// Route for root / web page
 	server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
 			  {
-				  //request->send_P(200, "text/html", index_html, processor);
-				  request->send(LittleFS, "/index.htm", String(), false, processor);
+				  AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", index_html_gz, index_html_gz_len, processor);
+				  response->addHeader("Cache-Control", "max-age=31536000");
+				  //response->addHeader("Content-Encoding", "gzip");
+				  response->addHeader("ETag", String(index_html_gz_len));
+				  request->send(response);
 			  });
-	server.serveStatic("/mdg-ledr.js", LittleFS, "/mdg-ledr.js", "max-age=31536000");
-	server.serveStatic("/mdg-ledr.css", LittleFS, "mdg-ledr.css", "max-age=31536000");
-	server.serveStatic("/mdi-font.ttf", LittleFS, "/mdi-font.ttf", "max-age=31536000");
-	server.serveStatic("/mdi-font.woff", LittleFS, "/mdi-font.woff", "max-age=31536000");
-	server.serveStatic("/mdi-font.woff2", LittleFS, "/mdi-font.woff2", "max-age=31536000");
+
+	server.on("/mdg-ledr.js", HTTP_GET, [](AsyncWebServerRequest *request)
+			  {
+				  AsyncWebServerResponse *response = request->beginResponse_P(200, "application/javascript", mdg_ledr_js, mdg_ledr_js_len);
+				  response->addHeader("Cache-Control", "max-age=31536000");
+				  response->addHeader("Content-Encoding", "gzip");
+				  response->addHeader("ETag", String(mdg_ledr_js_len));
+				  request->send(response);
+			  });
+	server.on("/mdg-ledr.css", HTTP_GET, [](AsyncWebServerRequest *request)
+			  {
+				  AsyncWebServerResponse *response = request->beginResponse_P(200, "text/css", mdg_ledr_css_gz, mdg_ledr_css_gz_len);
+				  response->addHeader("Cache-Control", "max-age=31536000");
+				  response->addHeader("Content-Encoding", "gzip");
+				  response->addHeader("ETag", String(mdg_ledr_css_gz_len));
+				  request->send(response);
+			  });
+	server.on("/mdi-font.ttf", HTTP_GET, [](AsyncWebServerRequest *request)
+			  {
+				  AsyncWebServerResponse *response = request->beginResponse_P(200, "font", mdi_font_ttf_gz, mdi_font_ttf_gz_len);
+				  response->addHeader("Cache-Control", "max-age=31536000");
+				  response->addHeader("Content-Encoding", "gzip");
+				  response->addHeader("ETag", String(mdi_font_ttf_gz_len));
+				  request->send(response);
+			  });
+	server.on("/mdi-font.woff", HTTP_GET, [](AsyncWebServerRequest *request)
+			  {
+				  AsyncWebServerResponse *response = request->beginResponse_P(200, "font", mdi_font_woff_gz, mdi_font_woff_gz_len);
+				  response->addHeader("Cache-Control", "max-age=31536000");
+				  response->addHeader("Content-Encoding", "gzip");
+				  response->addHeader("ETag", String(mdi_font_woff_gz_len));
+				  request->send(response);
+			  });
+	server.on("/mdi-font.woff2", HTTP_GET, [](AsyncWebServerRequest *request)
+			  {
+				  AsyncWebServerResponse *response = request->beginResponse_P(200, "font", mdi_font_woff2_gz, mdi_font_woff2_gz_len);
+				  response->addHeader("Cache-Control", "max-age=31536000");
+				  response->addHeader("Content-Encoding", "gzip");
+				  response->addHeader("ETag", String(mdi_font_woff2_gz_len));
+				  request->send(response);
+			  });
 
 	server.on("/save-config", HTTP_GET, [](AsyncWebServerRequest *request) { //save config
-		Serial.println("save");
+		//Serial.println("save");
 
 		saveConfiguration("/config.json");
 		request->send(200, "text/plain", "OK");
@@ -1643,9 +1711,43 @@ void setup()
 		saveClockDisplays("/clkdisplays.json");
 		request->send(200, "text/plain", "OK");
 	});
+	server.on("/get-settings", HTTP_GET, [](AsyncWebServerRequest *request)
+			  {
+				  DynamicJsonDocument data(1024);
+
+				  data["tz"] = config.tz;
+				  data["ssid"] = config.ssid;
+				  if (String(config.wifipassword).isEmpty())
+				  {
+					  data["wp"] = String("");
+				  }
+				  else
+				  {
+					  data["wp"] = String("********");
+				  }
+
+				  data["hn"] = config.hostname;
+				  data["ms"] = config.mqttserver;
+				  data["mp"] = config.mqttport;
+				  data["mu"] = config.mqttuser;
+				  if (String(config.mqttpassword).isEmpty())
+				  {
+					  data["mpw"] = String("");
+				  }
+				  else
+				  {
+					  data["mpw"] = String("********");
+				  }
+
+				  data["mt"] = config.mqtttls;
+
+				  String response;
+				  serializeJson(data, response);
+				  request->send(200, "application/json", response);
+			  });
 	server.on("/get-clockdisplay", HTTP_GET, [](AsyncWebServerRequest *request)
 			  {
-				  StaticJsonDocument<256> data;
+				  DynamicJsonDocument data(256);
 				  if (request->hasParam("id"))
 				  {
 					  int i = (request->getParam("id")->value()).toInt();
@@ -1659,7 +1761,7 @@ void setup()
 					  data["s"] = clockdisplays[i].showseconds;
 					  data["ab"] = clockdisplays[i].autobrightness;
 					  data["bn"] = clockdisplays[i].brightness;
-					  data["rb"] = clockdisplays[i].rainbowgb;
+					  data["be"] = clockdisplays[i].backgroud_effect;
 				  }
 				  else
 				  {
@@ -1671,7 +1773,7 @@ void setup()
 			  });
 	server.on("/get-schedule", HTTP_GET, [](AsyncWebServerRequest *request)
 			  {
-				  StaticJsonDocument<256> data;
+				  DynamicJsonDocument data(256);
 				  if (request->hasParam("id"))
 				  {
 
@@ -1698,7 +1800,7 @@ void setup()
 			  });
 	server.on("/get-schedules", HTTP_GET, [](AsyncWebServerRequest *request)
 			  {
-				  StaticJsonDocument<1536> data;
+				  DynamicJsonDocument data(1536);
 
 				  for (int i = 0; i <= SCHEDULES - 1; i++)
 				  {
@@ -1729,7 +1831,6 @@ void setup()
 					  else if (p->name() == "hour")
 					  {
 						  schedules[scheduleId].hour = p->value().toInt();
-						  Serial.println(scheduleId);
 					  }
 					  else if (p->name() == "minute")
 					  {
@@ -1822,9 +1923,9 @@ void setup()
 					  {
 						  clockdisplays[config.activeclockdisplay].autobrightness = p->value().toInt();
 					  }
-					  else if (p->name() == "rainbowbg")
+					  else if (p->name() == "bg_effect")
 					  {
-						  clockdisplays[config.activeclockdisplay].rainbowgb = p->value().toInt();
+						  clockdisplays[config.activeclockdisplay].backgroud_effect = p->value().toInt();
 					  }
 					  else if (p->name() == "ssid")
 					  {
@@ -1839,7 +1940,14 @@ void setup()
 					  else if (p->name() == "hostname")
 					  {
 
-						  p->value().toCharArray(config.hostname, sizeof(config.hostname));
+						  if (p->value().isEmpty())
+						  {
+							  //Do nothing, we dont want an empty hostname
+						  }
+						  else
+						  {
+							  p->value().toCharArray(config.hostname, sizeof(config.hostname));
+						  }
 					  }
 					  else if (p->name() == "mqtt_server")
 					  {
@@ -1849,8 +1957,14 @@ void setup()
 					  else if (p->name() == "mqtt_port")
 					  {
 
-						  config.mqttport = p->value().toInt();
-						  Serial.println(p->value().toInt());
+						  if (!p->value().isEmpty())
+						  {
+							  config.mqttport = p->value().toInt();
+						  }
+						  else
+						  {
+							  config.mqttport = 1883;
+						  }
 					  }
 					  else if (p->name() == "mqtt_user")
 					  {
@@ -1866,7 +1980,6 @@ void setup()
 					  {
 
 						  config.mqtttls = p->value().toInt();
-						  Serial.println(p->value().toInt());
 					  }
 					  else if (p->name() == "tz")
 					  {
@@ -1881,7 +1994,7 @@ void setup()
 	MDNS.addService("http", "tcp", 80);
 
 	// Start ElegantOTA
-	AsyncElegantOTA.begin(&server);
+	//	AsyncElegantOTA.begin(&server);
 
 	// Start server
 	server.begin();
@@ -1909,23 +2022,45 @@ void loop()
 			if (tz.hour() == schedules[i].hour && tz.minute() == schedules[i].minute && schedules[i].active == 1)
 			{
 				config.activeclockdisplay = schedules[i].activeclockdisplay;
-				Serial.println("Schedule active..");
+				//Serial.println("Schedule active..");
 			}
 		}
 	}
 
-	//Set background color
-	for (int Led = 0; Led < 60; Led = Led + 1)
+	if (clockdisplays[config.activeclockdisplay].backgroud_effect > 0) //show effect
 	{
+		EVERY_N_MILLISECONDS(20) { gHue++; }
 
-		leds[rotate(Led)] = clockdisplays[config.activeclockdisplay].backgroundColor;
+		switch (clockdisplays[config.activeclockdisplay].backgroud_effect)
+		{
+		case 1:
+			rainbow();
+			break;
+		case 2:
+			rainbowWithGlitter();
+			break;
+		case 3:
+			juggle();
+			break;
+		case 4:
+			confetti();
+			break;
+		case 5:
+			bpm();
+			break;
+		default:
+			break;
+		}
 	}
-
-	if (clockdisplays[config.activeclockdisplay].rainbowgb == 1) //show rainbow background
+	else
 	{
-		fill_rainbow(leds, NUM_LEDS, 5, 8);
-	}
+		//Set background color
 
+		for (int Led = 0; Led < 60; Led = Led + 1)
+		{
+			leds[rotate(Led)] = clockdisplays[config.activeclockdisplay].backgroundColor;
+		}
+	}
 	if (hourmarks_state)
 	{
 		//Set hour marks

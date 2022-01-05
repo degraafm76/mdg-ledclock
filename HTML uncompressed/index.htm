@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html>
-
 <head>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="MDG Ledclock">
@@ -9,7 +8,6 @@
     <link rel="stylesheet" href="/mdg-ledr.css">
     <script type="text/javascript" src="/mdg-ledr.js"></script>
 </head>
-
 <body>
     <ons-page>
         <ons-toolbar>
@@ -193,7 +191,7 @@
         <ons-page id="Tab3">
             <ons-card>
                 <div style="text-align: center;" class="title">
-                    Wifi settings
+                    Wifi
                 </div>
                 <div class="content">
                     <div style="text-align: center; margin-top: 10px;">
@@ -201,12 +199,12 @@
                         <div id="id02"></div>
                         </p><br>
                         <p>
-                            <ons-input id="ssid" modifier="material" placeholder="SSID:" value="%ssid%" float>
+                            <ons-input id="ssid" modifier="material" placeholder="SSID:" float>
                             </ons-input>
                         </p>
                         <p>
                             <ons-input id="wifipassword" modifier="material" type="password"
-                                placeholder="WiFi password:" value="%wifipassword%" float></ons-input>
+                                placeholder="WiFi password:" float></ons-input>
                         </p>
                         <p style="margin-top: 30px; text-align: center;">
                             <ons-button onclick="getssid()">Scan Networks</ons-button>
@@ -216,13 +214,14 @@
             </ons-card>
             <ons-card>
                 <div style="text-align: center;" class="title">
-                    Host-name
+                    Hostname
                 </div>
                 <div class="content">
                     <div style="text-align: center; margin-top: 30px;">
                         <p>
-                            <ons-input id="hostname" modifier="material" placeholder="Hostname:" maxlength="16"
-                                value="%hostname%" float></ons-input>
+                            <ons-input id="hostname" modifier="material" placeholder="Hostname:" maxlength="16" float>
+                            </ons-input>
+                            </ons-input>
                         </p>
                     </div>
                 </div>
@@ -704,7 +703,7 @@
             </ons-card>
             <ons-card>
                 <div style="text-align: center;" class="title">
-                    MQTT settings
+                    MQTT
                 </div>
                 <div class="content">
                     <div style="text-align: left; margin-top: 10px;">
@@ -712,28 +711,27 @@
                         <div id="id02"></div>
                         </p><br>
                         <p>
-                            <ons-input id="mqtt_server" modifier="material" placeholder="MQTT Server:"
-                                value="%mqtt_server%" float></ons-input>
+                            <ons-input id="mqtt_server" modifier="material" placeholder="MQTT Server:" maxlength="64"
+                                float></ons-input>
                         </p>
                         <p>
-                            <ons-input id="mqtt_port" modifier="material" placeholder="MQTT port:" value="%mqtt_port%"
+                            <ons-input id="mqtt_port" modifier="material" placeholder="MQTT port:" input type="number"
                                 float>
                             </ons-input>
                         </p>
+                        <label for="mqtt_tls">
+                            Encryption (TLS)
+                        </label>
                         <div>
-                            MQTT SSL/TLS:
-                        </div>
-                        <div>
-                            <ons-switch id="mqtt_tls" %mqtt_tls% %mqtt_tls_switch%></ons-switch>
+                            <ons-switch id="mqtt_tls"></ons-switch>
                         </div>
                         <p>
-                            <ons-input id="mqtt_user" modifier="material" placeholder="MQTT user:" value="%mqtt_user%"
-                                maxlength="16" float>
+                            <ons-input id="mqtt_user" modifier="material" placeholder="MQTT user:" maxlength="32" float>
                             </ons-input>
                         </p>
                         <p>
-                            <ons-input id="mqtt_password" modifier="material" placeholder="MQTT password:" type="password"
-                                value="%mqtt_password%" maxlength="16" float></ons-input>
+                            <ons-input id="mqtt_password" modifier="material" placeholder="MQTT password:"
+                                type="password" maxlength="32" float></ons-input>
                         </p>
 
                     </div>
@@ -747,22 +745,22 @@
     <template id="tab4.html">
         <ons-page id="Tab4">
             <b>Clock</b><br>
+            Designed by Martin de Graaf in the Netherlands<br>
             Model: %clock_model%<br>
             Software version: %software_version%<br>
             Software compile date/time: %compile_date_time%<br><br>
+
             <b>Wifi</b><br>
-            WiFi connected to SSID: %ssid%<br>
-            WiFi RSSI: %wifi_rssi%<br>
-            WiFi Channel: %wifi_channel%<br>
-            Wifi IP-Address: %wifi_ip%<br>
-            WiFi MAC Address: %wifi_mac%<br><br>
+            Connected to SSID: %ssid%<br>
+            RSSI: %wifi_rssi%<br>
+            Channel: %wifi_channel%<br>
+            IP-Address: %wifi_ip%<br>
+            MAC Address: %wifi_mac%<br><br>
+            <b>MQTT</b><br>
+            Connected: %mqtt_connected%<br><br>
             <b>Light sensor:</b><br>
             LUX: %lux%
-
-
         </ons-page>
-
-
 
     </template>
     <ons-modal id="modal" direction="up">
@@ -778,42 +776,13 @@
 </html>
 <script>
 
+
     var backgroundColorPicker;
     var hourMarkColorPicker;
     var hourColorPicker;
     var minuteColorPicker;
     var secondColorPicker;
     var selectFilled = 0;
-    document.addEventListener('prechange', function (event) {
-        document.querySelector('ons-toolbar .center')
-            .innerHTML = event.tabItem.getAttribute('label');
-
-        //document.getElementById('hour').options.length = 0;
-
-        if (selectFilled == 0) {
-            var selectHour = document.getElementById('hour');
-            for (var i = 0; i <= 23; i++) {
-                var opt = document.createElement('option');
-                opt.appendChild(document.createTextNode(i));
-                opt.value = i;
-                selectHour.appendChild(opt);
-            }
-
-            //document.getElementById('minute').options.length = 0;
-            var selectMinute = document.getElementById('minute');
-            for (var i = 0; i <= 59; i++) {
-                var opt = document.createElement('option');
-                opt.appendChild(document.createTextNode(i));
-                opt.value = i;
-                selectMinute.appendChild(opt);
-            }
-            selectFilled = 1;
-            getschedule();
-        }
-
-
-
-    });
 
     function getschedule() {
 
@@ -945,24 +914,6 @@
         //document.getElementById("ssid").disabled = true;
     }
 
-    function set_theme(themeindex) {
-
-
-        var themes = [
-            ["00000", "00000", "ff6200", "ff6200", "ff6200"],
-            ["06103d", "5c5c5c", "ff1e00", "ff1e00", "ff1e00"],
-            ["002622", "b81f00", "ffe3e9", "ffe3e9", "ffe3e9"]
-
-
-        ];
-
-        backgroundColorPicker.color.hexString = themes[themeindex][0];
-        hourMarkColorPicker.color.hexString = themes[themeindex][1];
-        hourColorPicker.color.hexString = themes[themeindex][2];
-        minuteColorPicker.color.hexString = themes[themeindex][3];
-        secondColorPicker.color.hexString = themes[themeindex][4];
-    }
-
     function fetchJSONFile(path, callback) {
         var httpRequest = new XMLHttpRequest();
         httpRequest.onreadystatechange = function () {
@@ -984,6 +935,25 @@
         xhr.send();
     }
 
+    function getsettings() {
+        fetchJSONFile("/get-settings", function (data) {
+            document.getElementById('hostname').value = data.hn;
+            document.getElementById('ssid').value = data.ssid;
+            document.getElementById('wifipassword').value = data.wp;
+            document.getElementById("tz").value = data.tz;
+            document.getElementById('mqtt_server').value = data.ms;
+            document.getElementById('mqtt_port').value = data.mp;
+            document.getElementById('mqtt_user').value = data.mu;
+            document.getElementById('mqtt_password').value = data.mpw;
+            if (data.mt == 1) {
+                document.getElementById('mqtt_tls').checked = true;
+            } else {
+                document.getElementById('mqtt_tls').checked = false;
+            }
+
+        });
+    }
+
 
     function save_settings() {
         var ssid = encodeURIComponent(document.getElementById('ssid').value);
@@ -1003,40 +973,33 @@
         }
         var urlparams = '';
 
+        urlparams += "ssid=" + ssid;
+
+        if (wifipassword != '********') {
+            urlparams += "&wifipassword=" + wifipassword;
+        }
+
         if (hostname != '') {
-            urlparams = "&hostname=" + hostname;
+            urlparams += "&hostname=" + hostname;
         }
         if (tz != '') {
             urlparams += "&tz=" + tz;
         }
 
         urlparams += "&mqtt_server=" + mqtt_server;
+        urlparams += "&mqtt_port=" + mqtt_port;
+        urlparams += "&mqtt_user=" + mqtt_user;
 
-        if (mqtt_port != '') {
-            urlparams += "&mqtt_port=" + mqtt_port;
-        }
-        if (mqtt_user != '') {
-            urlparams += "&mqtt_user=" + mqtt_user;
-        }
-        if (mqtt_password != '' && mqtt_password != '********') {
+        if (mqtt_password != '********') {
             urlparams += "&mqtt_password=" + mqtt_password;
         }
         if (mqtt_tls == 0 || mqtt_tls == 1) {
             urlparams += "&mqtt_tls=" + mqtt_tls;
         }
 
-
         var xhr = new XMLHttpRequest();
-        if (ssid != '' && wifipassword != '' && wifipassword != '********') {
-
-            xhr.open("GET", "/configuration?ssid=" + ssid + "&wifipassword=" + wifipassword + urlparams, false);
-
-            xhr.send();
-        } else {
-            xhr.open("GET", "/configuration?" + urlparams, false);
-
-            xhr.send();
-        }
+        xhr.open("GET", "/configuration?" + urlparams, false);
+        xhr.send();
 
         var xhr = new XMLHttpRequest();
         xhr.open("GET", "/save-config", false);
@@ -1079,6 +1042,44 @@
 
 
     ons.ready(function () {
+
+        document.addEventListener('prechange', function (event) {
+
+            document.querySelector('ons-toolbar .center')
+                .innerHTML = event.tabItem.getAttribute('label');
+
+
+            if (event.index === 1) { //Schedule TAB
+                getschedules();
+                if (selectFilled == 0) {
+                    var selectHour = document.getElementById('hour');
+                    for (var i = 0; i <= 23; i++) {
+                        var opt = document.createElement('option');
+                        opt.appendChild(document.createTextNode(i));
+                        opt.value = i;
+                        selectHour.appendChild(opt);
+                    }
+
+                    //document.getElementById('minute').options.length = 0;
+                    var selectMinute = document.getElementById('minute');
+                    for (var i = 0; i <= 59; i++) {
+                        var opt = document.createElement('option');
+                        opt.appendChild(document.createTextNode(i));
+                        opt.value = i;
+                        selectMinute.appendChild(opt);
+                    }
+                    selectFilled = 1;
+
+                }
+            }
+            if (event.index === 2) { //Settings TAB
+                getsettings();
+            }
+
+
+
+        });
+
 
 
 
@@ -1163,7 +1164,6 @@
         });
 
         document.getElementById("brightness").addEventListener('input', function () {
-            console.log(document.getElementById("brightness").value);
             var xhr = new XMLHttpRequest();
             xhr.open("GET", "/configuration?brightness=" + document.getElementById("brightness").value, true);
             xhr.send();
@@ -1230,12 +1230,12 @@
         });
 
 
-        setTimeout(function () { //workaround.. intems in here do not work whitout this timeout
+        setTimeout(function () { //workaround.. intems in here do not work without this timeout
             if (document.getElementById("autobrightness").checked == true) {
                 document.getElementById('brightness').disabled = true;
             }
 
-            document.getElementById("tz").value = '%tz%';
+
             document.getElementById("activeclockdisplay").value = '%activeclockdisplay%';
 
             document.getElementById("scheduleid").addEventListener('change', function () {
@@ -1244,10 +1244,12 @@
 
             });
 
-            getschedules();
+
+
 
         }, 300);
 
 
     });
+
 </script>
