@@ -1,11 +1,13 @@
 #include <Arduino.h>
 #include <helperfunctions.h>
 #include <ezTime.h> // using modified library in /lib (changed host to timezoned.mdg-design.nl)
+#include <ESP8266httpUpdate.h>
+#include <ESP8266HTTPClient.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 #include <FastLED.h>
 #include <AsyncMqttClient.h>
-#include <ESPAsyncTCP.h> //	using modified library in /lib to correct SSL error when compiling with build_flags = -DASYNC_TCP_SSL_ENABLED=1 ;https://github.com/mhightower83/ESPAsyncTCP#correct-ssl-_recv
+#include <ESPAsyncTCP.h> //	using modified library in /lib to correct SSL error when compiling with build_flags = -DASYNC_TCP_SSL_ENABLED=1  see (https://github.com/mhightower83/ESPAsyncTCP#correct-ssl-_recv) when this pull request is complete we can continue to use the original library.
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
@@ -17,22 +19,23 @@
 
 WiFiClient espClient;
 
-#define SOFTWARE_VERSION "1.2.0"		   // Software version
-#define CLOCK_MODEL "MDG Ledclock model 1" // Clock Model
-#define NUM_LEDS 60						   // How many leds are in the clock?
-#define ROTATE_LEDS 30					   // Rotate leds by this number. Led ring is connected upside down
-#define MAX_BRIGHTNESS 255				   // Max brightness
-#define MIN_BRIGHTNESS 8				   // Min brightness (at very low brightness levels interpolating doesn't work well and the led's will flicker and not display the correct color)
-#define DATA_PIN 3						   // Neopixel data pin
-#define NEOPIXEL_VOLTAGE 5				   // Neopixel voltage
-#define NEOPIXEL_MILLIAMPS 1000			   // Neopixel maximum current usage in milliamps, if you have a powersource higher then 1A you can change this value (at your own risk!) to have brighter leds.
-#define LIGHTSENSORPIN A0				   // Ambient light sensor pin
-#define EXE_INTERVAL_AUTO_BRIGHTNESS 1000  // Interval (ms) to check light sensor value
-#define CLOCK_DISPLAYS 8				   // Nr of user defined clock displays
-#define SCHEDULES 12					   // Nr of user defined schedules
-#define AP_NAME "MDG-Ledclock1"			   // Name of the AP when WIFI is not setup or connected
-//#define MQTT_DEBUG						   // MQTT debug enabled
-#define COMPILE_DATE __DATE__ " " __TIME__ // Compile date/time
+#define SOFTWARE_VERSION "1.2.0"			// Software version
+#define CLOCK_MODEL "MDG Ledclock model 1"	// Clock Model
+#define NUM_LEDS 60							// How many leds are in the clock?
+#define ROTATE_LEDS 30						// Rotate leds by this number. Led ring is connected upside down
+#define MAX_BRIGHTNESS 255					// Max brightness
+#define MIN_BRIGHTNESS 8					// Min brightness (at very low brightness levels interpolating doesn't work well and the led's will flicker and not display the correct color)
+#define DATA_PIN 3							// Neopixel data pin
+#define NEOPIXEL_VOLTAGE 5					// Neopixel voltage
+#define NEOPIXEL_MILLIAMPS 1000				// Neopixel maximum current usage in milliamps, if you have a powersource higher then 1A you can change this value (at your own risk!) to have brighter leds.
+#define LIGHTSENSORPIN A0					// Ambient light sensor pin
+#define EXE_INTERVAL_AUTO_BRIGHTNESS 1000	// Interval (ms) to check light sensor value
+#define EXE_INTERVAL_LIGHTSENSOR_MQTT 60000 // Interval (ms) to send light sensor value to MQTT topic
+#define CLOCK_DISPLAYS 8					// Nr of user defined clock displays
+#define SCHEDULES 12						// Nr of user defined schedules
+#define AP_NAME "MDG-Ledclock1"				// Name of the AP when WIFI is not setup or connected
+//#define MQTT_DEBUG						// MQTT debug enabled
+#define COMPILE_DATE __DATE__ " " __TIME__  // Compile date/time
 
 //mqtt async
 AsyncMqttClient mqttClient;
@@ -49,10 +52,11 @@ WiFiEventHandler wifiDisconnectHandler;
 Ticker wifiReconnectTimer;
 
 long lastReconnectAttempt = 0;
-unsigned long lastExecutedMillis = 0; // Variable to save the last executed time
+unsigned long lastExecutedMillis_brightness = 0;	  // Variable to save the last executed time
+unsigned long lastExecutedMillis_lightsensorMQTT = 0; // Variable to save the last executed time
 unsigned long currentMillis;
 boolean wifiConnected = false; // Variable to store wifi connected state
-boolean MQTTConnected = false; // Variable to store wifi connected state
+boolean MQTTConnected = false; // Variable to store MQTT connected state
 unsigned char bssid[6];
 byte channel;
 int rssi = -999;
@@ -152,6 +156,8 @@ const PROGMEM char *MQTT_HOURMARKS_BRIGHTNESS_COMMAND_TOPIC = "/hourmarks/bright
 // Hourmarks colors (rgb)
 const PROGMEM char *MQTT_HOURMARKS_RGB_STATE_TOPIC = "/hourmarks/rgb/status";
 const PROGMEM char *MQTT_HOURMARKS_RGB_COMMAND_TOPIC = "/hourmarks/rgb/set";
+//Light sensor
+const PROGMEM char *MQTT_LIGHT_SENSOR_STATE_TOPIC = "/sensor/lux/status";
 
 // payloads by default (on/off)
 const PROGMEM char *LIGHT_ON = "ON";
@@ -1017,7 +1023,6 @@ String processor(const String &var)
 	return String();
 }
 
-
 void saveSchedules(const char *filename)
 {
 	// Delete existing file, otherwise the configuration is appended to the file
@@ -1288,13 +1293,12 @@ void setup()
 		;
 	} // wait for Serial port to connect. Needed for native USB port only
 
-Serial.println("   __  ______  _____  __         __    __         __  ");
-Serial.println("  /  |/  / _ \\/ ___/ / / ___ ___/ /___/ /__  ____/ /__");
-Serial.println(" / /|_/ / // / (_ / / /_/ -_) _  / __/ / _ \\/ __/  '_/");
-Serial.println("/_/  /_/____/\\___/ /____|__/\\_,_/\\__/_/\\___/\\__/_/\\_\\ ");
-Serial.println();
+	Serial.println("   __  ______  _____  __         __    __         __  ");
+	Serial.println("  /  |/  / _ \\/ ___/ / / ___ ___/ /___/ /__  ____/ /__");
+	Serial.println(" / /|_/ / // / (_ / / /_/ -_) _  / __/ / _ \\/ __/  '_/");
+	Serial.println("/_/  /_/____/\\___/ /____|__/\\_,_/\\__/_/\\___/\\__/_/\\_\\ ");
+	Serial.println();
 
-                                                      
 	// Initialize LittleFS
 	if (!LittleFS.begin())
 	{
@@ -1455,6 +1459,10 @@ Serial.println();
 		wifiConnected = true;
 		//Only when there is a wifi connection get time from NTP
 		waitForSync();
+
+		WiFiClient client;
+
+		//ESPhttpUpdate.update(client, "192.168.178.100", 90, "/bin/firmware.bin");
 	}
 	else
 	{
@@ -1484,7 +1492,6 @@ Serial.println();
 	Serial.println("MQTT Connected: " + String(MQTTConnected));
 	Serial.println("MQTT TLS: " + String(config.mqtttls));
 
-
 	if (wifiConnected == false)
 	{
 		WiFi.mode(WIFI_AP); //Accespoint mode
@@ -1492,7 +1499,7 @@ Serial.println();
 	}
 
 	if (!MDNS.begin(config.hostname))
-	{	// Start the mDNS responder for esp8266.local
+	{ // Start the mDNS responder for esp8266.local
 		Serial.println("Error setting up MDNS responder!");
 	}
 
@@ -1517,7 +1524,7 @@ Serial.println();
 	// Route for root / web page
 	server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
 			  {
-				  AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", index_html_gz, index_html_gz_len,processor);
+				  AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", index_html_gz, index_html_gz_len, processor);
 				  response->addHeader("Cache-Control", "max-age=31536000");
 				  //response->addHeader("Content-Encoding", "gzip");
 				  response->addHeader("ETag", String(index_html_gz_len));
@@ -1858,7 +1865,7 @@ Serial.println();
 					  }
 					  else if (p->name() == "activeclockdisplay")
 					  {
-						 config.activeclockdisplay = p->value().toInt();
+						  config.activeclockdisplay = p->value().toInt();
 					  }
 					  else if (p->name() == "showseconds")
 					  {
@@ -2072,22 +2079,16 @@ void loop()
 	if (clockdisplays[config.activeclockdisplay].autobrightness == 1)
 	{
 		//Set brightness when auto brightness is active
-		if (currentMillis - lastExecutedMillis >= EXE_INTERVAL_AUTO_BRIGHTNESS)
+		if (currentMillis - lastExecutedMillis_brightness >= EXE_INTERVAL_AUTO_BRIGHTNESS)
 		{
-			lastExecutedMillis = currentMillis; // save the last executed time
-												//lightReading = analogRead(LIGHTSENSORPIN); //Read light level
+			lastExecutedMillis_brightness = currentMillis; // save the last executed time
 
 			// subtract the last reading:
 			total = total - readings[readIndex];
+
 			// read from the sensor:
 			readings[readIndex] = analogRead(LIGHTSENSORPIN);
 
-			lux = readings[readIndex] * 0.9765625; // 1000/1024
-
-			//Serial.print("Raw light read:");
-			//Serial.println(readings[readIndex]);
-			//Serial.print("Lux:");
-			//Serial.println(lux);
 			// add the reading to the total:
 			total = total + readings[readIndex];
 			// advance to the next position in the array:
@@ -2102,21 +2103,14 @@ void loop()
 
 			// calculate the average:
 			average = total / numReadings;
-			// send it to the computer as ASCII digits
-			//Serial.print("Avarage:");
-			//Serial.println(average);
 
-			//float ratio = average / 1023.0; //Get percent of maximum value (1023)
-			//ratio = pow(ratio, 0.3);
+			lux = average * 0.9765625; // 1000/1024
 
 			int brightnessMap = map(average, 3, 45, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
 
 			brightnessMap = constrain(brightnessMap, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
 
 			sliderBrightnessValue = brightnessMap;
-			//Serial.print("Auto brightness: ");
-			//Serial.println(brightnessMap);
-
 			FastLED.setBrightness(brightnessMap);
 		}
 	}
@@ -2126,10 +2120,17 @@ void loop()
 
 		int brightnessMap = map(sliderBrightnessValue, 0, 255, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
 		brightnessMap = constrain(brightnessMap, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
+	}
 
-		//FastLED.setBrightness(brightnessMap);
-		//Serial.print("Manual brightness: ");
-		//Serial.println(brightnessMap);
+	if (MQTTConnected)
+	{
+		if (currentMillis - lastExecutedMillis_lightsensorMQTT >= EXE_INTERVAL_LIGHTSENSOR_MQTT)
+		{
+			lastExecutedMillis_lightsensorMQTT = currentMillis; // save the last executed time
+			snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%0.2f", lux);
+			snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_LIGHT_SENSOR_STATE_TOPIC);
+			mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
+		}
 	}
 
 	//FastLED.show();
