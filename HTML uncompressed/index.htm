@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="MDG Ledclock">
@@ -8,6 +9,7 @@
     <link rel="stylesheet" href="/mdg-ledr.css">
     <script type="text/javascript" src="/mdg-ledr.js"></script>
 </head>
+
 <body>
     <ons-page>
         <ons-toolbar>
@@ -1227,6 +1229,29 @@
             var xhr = new XMLHttpRequest();
             xhr.open("GET", "/color?secondcolor=" + hex, true);
             xhr.send();
+        });
+
+
+
+        document.addEventListener('init', function (e) { //excecute code after complete tab load
+
+            if (e.target.id === 'Tab1') { //excecute code after complete tab load
+                if (document.getElementById("autobrightness").checked == true) {
+                    document.getElementById('brightness').disabled = true;
+
+                }
+                getsettings(); //get settings at page load
+
+
+            }
+            if (e.target.id === 'Tab2') {
+                document.getElementById("scheduleid").addEventListener('change', function () {
+
+                    getschedule();
+
+                });
+            }
+
         });
 
 

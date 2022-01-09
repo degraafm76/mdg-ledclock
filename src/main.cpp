@@ -1,13 +1,12 @@
 #include <Arduino.h>
 #include <helperfunctions.h>
-#include <ezTime.h>
+#include <ezTime.h> // using modified library in /lib (changed host to timezoned.mdg-design.nl)
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 #include <FastLED.h>
 #include <AsyncMqttClient.h>
-#include <ESPAsyncTCP.h>
+#include <ESPAsyncTCP.h> //	using modified library in /lib to correct SSL error when compiling with build_flags = -DASYNC_TCP_SSL_ENABLED=1 ;https://github.com/mhightower83/ESPAsyncTCP#correct-ssl-_recv
 #include <ESPAsyncWebServer.h>
-//#include <AsyncElegantOTA.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <Ticker.h>
@@ -26,7 +25,7 @@ WiFiClient espClient;
 #define MIN_BRIGHTNESS 8				   // Min brightness (at very low brightness levels interpolating doesn't work well and the led's will flicker and not display the correct color)
 #define DATA_PIN 3						   // Neopixel data pin
 #define NEOPIXEL_VOLTAGE 5				   // Neopixel voltage
-#define NEOPIXEL_MILLIAMPS 1000			   // Neopixel maximum current usage in milliamps, if you have a powersource higher then 1A you can change this value to have brighter leds.
+#define NEOPIXEL_MILLIAMPS 1000			   // Neopixel maximum current usage in milliamps, if you have a powersource higher then 1A you can change this value (at your own risk!) to have brighter leds.
 #define LIGHTSENSORPIN A0				   // Ambient light sensor pin
 #define EXE_INTERVAL_AUTO_BRIGHTNESS 1000  // Interval (ms) to check light sensor value
 #define CLOCK_DISPLAYS 8				   // Nr of user defined clock displays
@@ -1018,6 +1017,7 @@ String processor(const String &var)
 	return String();
 }
 
+
 void saveSchedules(const char *filename)
 {
 	// Delete existing file, otherwise the configuration is appended to the file
@@ -1035,7 +1035,7 @@ void saveSchedules(const char *filename)
 	// Don't forget to change the capacity to match your requirements.
 	// Use arduinojson.org/assistant to compute the capacity.
 
-	DynamicJsonDocument data(1536);
+	DynamicJsonDocument data(128 * SCHEDULES);
 	// Set the values in the document
 	for (int i = 0; i <= SCHEDULES - 1; i++)
 	{
@@ -1121,7 +1121,7 @@ void saveClockDisplays(const char *filename)
 	// Don't forget to change the capacity to match your requirements.
 	// Use arduinojson.org/assistant to compute the capacity.
 
-	DynamicJsonDocument data(2048);
+	DynamicJsonDocument data(256 * CLOCK_DISPLAYS);
 
 	// Set the values in the document
 	for (int i = 0; i <= CLOCK_DISPLAYS - 1; i++)
@@ -1243,6 +1243,7 @@ void juggle()
 		dothue += 32;
 	}
 }
+
 void bpm()
 {
 	// colored stripes pulsing at a defined Beats-Per-Minute (BPM)
@@ -1287,7 +1288,13 @@ void setup()
 		;
 	} // wait for Serial port to connect. Needed for native USB port only
 
-	Serial.println("----------------- [MDG Ledclock] ------------------");
+Serial.println("   __  ______  _____  __         __    __         __  ");
+Serial.println("  /  |/  / _ \\/ ___/ / / ___ ___/ /___/ /__  ____/ /__");
+Serial.println(" / /|_/ / // / (_ / / /_/ -_) _  / __/ / _ \\/ __/  '_/");
+Serial.println("/_/  /_/____/\\___/ /____|__/\\_,_/\\__/_/\\___/\\__/_/\\_\\ ");
+Serial.println();
+
+                                                      
 	// Initialize LittleFS
 	if (!LittleFS.begin())
 	{
@@ -1324,7 +1331,8 @@ void setup()
 	// Allocate a temporary JsonDocument
 	// Don't forget to change the capacity to match your requirements.
 	// Use arduinojson.org/assistant to compute the capacity.
-	DynamicJsonDocument schedule_doc(1536);
+
+	DynamicJsonDocument schedule_doc(128 * SCHEDULES);
 
 	jsonSchedulefile = (schedulefile.readString());
 
@@ -1354,7 +1362,7 @@ void setup()
 	// Allocate a temporary JsonDocument
 	// Don't forget to change the capacity to match your requirements.
 	// Use arduinojson.org/assistant to compute the capacity.
-	DynamicJsonDocument clkdisplays_doc(2048);
+	DynamicJsonDocument clkdisplays_doc(256 * CLOCK_DISPLAYS);
 
 	jsonClkdisplaysfile = (clkdisplaysfile.readString());
 
@@ -1399,7 +1407,6 @@ void setup()
 														   //.setCorrection(TypicalLEDStrip);
 		.setCorrection(0xFFFFFF);						   //No correction
 	FastLED.setMaxRefreshRate(0);
-	//FastLED.setDither( 0 );
 
 	//MQTT
 	mqttClient.onConnect(onMqttConnect);
@@ -1477,9 +1484,6 @@ void setup()
 	Serial.println("MQTT Connected: " + String(MQTTConnected));
 	Serial.println("MQTT TLS: " + String(config.mqtttls));
 
-	//Serial.println("starting AP");
-	//default IP = 192.168.4.1
-	//WiFi.mode(WIFI_AP);
 
 	if (wifiConnected == false)
 	{
@@ -1489,7 +1493,7 @@ void setup()
 
 	if (!MDNS.begin(config.hostname))
 	{	// Start the mDNS responder for esp8266.local
-		//Serial.println("Error setting up MDNS responder!");
+		Serial.println("Error setting up MDNS responder!");
 	}
 
 	// Provide official timezone names
@@ -1513,7 +1517,7 @@ void setup()
 	// Route for root / web page
 	server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
 			  {
-				  AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", index_html_gz, index_html_gz_len, processor);
+				  AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", index_html_gz, index_html_gz_len,processor);
 				  response->addHeader("Cache-Control", "max-age=31536000");
 				  //response->addHeader("Content-Encoding", "gzip");
 				  response->addHeader("ETag", String(index_html_gz_len));
@@ -1568,18 +1572,15 @@ void setup()
 		request->send(200, "text/plain", "OK");
 	});
 
-	server.on("/scan-networks", HTTP_GET, [](AsyncWebServerRequest *request) { //save config
-		Serial.println("** Scan Networks **");
-
+	server.on("/scan-networks", HTTP_GET, [](AsyncWebServerRequest *request) { //scan networks
 		WiFi.scanNetworksAsync([request](int numNetworks)
 							   {
 								   DynamicJsonDocument data(2048);
 								   int o = numNetworks;
 								   int loops = 0;
 
-								   if (numNetworks == 0)
-									   Serial.println("no networks found");
-								   else
+								   if (numNetworks > 0)
+
 								   {
 									   // sort by RSSI
 									   int indices[numNetworks];
@@ -1595,13 +1596,6 @@ void setup()
 									   // CONFIG
 									   bool sortRSSI = true;   // sort aps by RSSI
 									   bool removeDups = true; // remove dup aps ( forces sort )
-									   bool printAPs = true;   // print found aps
-
-									   bool printAPFound = false;	// do home ap check
-									   const char *homeAP = "MYAP"; // check for this ap on each scan
-									   // --------
-
-									   bool homeAPFound = false;
 
 									   if (removeDups || sortRSSI)
 									   {
@@ -1640,70 +1634,21 @@ void setup()
 										   }
 									   }
 
-									   //    Serial.println((String)loops);
-									   Serial.print(o);
-									   Serial.println(" networks found of " + (String)numNetworks);
-
-									   Serial.println("00: (RSSI)[BSSID][hidden] SSID [channel] [encryption]");
 									   for (int i = 0; i < numNetworks; ++i)
 									   {
-										   if (printAPFound && (WiFi.SSID(indices[i]) == homeAP))
-											   homeAPFound = true;
-
-										   if (printAPs && indices[i] != -1)
+										   if (indices[i] != -1)
 										   {
-
 											   JsonObject obj = data.createNestedObject();
-											   //obj["i"] = i;
+											   obj["i"] = i;
 											   obj["ssid"] = WiFi.SSID(indices[i]);
-
-											   // Print SSID and RSSI for each network found
-											   Serial.printf("%02d", i + 1);
-											   Serial.print(":");
-
-											   Serial.print(" (");
-											   Serial.print(WiFi.RSSI(indices[i]));
-											   Serial.print(")");
-
-											   Serial.print(" [");
-											   Serial.print(WiFi.BSSIDstr(indices[i]));
-											   Serial.print("]");
-
-											   Serial.print(" [");
-											   Serial.print((String)WiFi.isHidden(indices[i]));
-											   Serial.print("]");
-
-											   Serial.print(" " + WiFi.SSID(indices[i]));
-											   // Serial.print((WiFi.encryptionType(indices[i]) == ENC_TYPE_NONE)?" ":"*");
-
-											   Serial.print(" [");
-											   Serial.printf("%02d", (int)WiFi.channel(indices[i]));
-											   Serial.print("]");
-
-											   Serial.print(" [");
-											   Serial.print((String)encryptionTypeStr(WiFi.encryptionType(indices[i])));
-											   Serial.print("]");
-
-											   //      Serial.print(" WiFi index: " + (String)indices[i]);
-
-											   Serial.println();
 										   }
-										   delay(10);
 									   }
-									   if (printAPFound && !homeAPFound)
-										   Serial.println("HOME AP NOT FOUND");
-									   Serial.println("");
 								   }
+
 								   String response;
 								   serializeJson(data, response);
 								   request->send(200, "application/json", response);
-								   Serial.println(ESP.getFreeHeap());
 							   });
-		// initialize all the readings to 0:
-		for (int thisReading = 0; thisReading < numReadings; thisReading++)
-		{
-			readings[thisReading] = 0;
-		}
 
 	});
 
@@ -1714,7 +1659,7 @@ void setup()
 	server.on("/get-settings", HTTP_GET, [](AsyncWebServerRequest *request)
 			  {
 				  DynamicJsonDocument data(1024);
-
+				  data["acd"] = config.activeclockdisplay;
 				  data["tz"] = config.tz;
 				  data["ssid"] = config.ssid;
 				  if (String(config.wifipassword).isEmpty())
@@ -1800,7 +1745,7 @@ void setup()
 			  });
 	server.on("/get-schedules", HTTP_GET, [](AsyncWebServerRequest *request)
 			  {
-				  DynamicJsonDocument data(1536);
+				  DynamicJsonDocument data(128 * SCHEDULES);
 
 				  for (int i = 0; i <= SCHEDULES - 1; i++)
 				  {
@@ -1913,7 +1858,7 @@ void setup()
 					  }
 					  else if (p->name() == "activeclockdisplay")
 					  {
-						  config.activeclockdisplay = p->value().toInt();
+						 config.activeclockdisplay = p->value().toInt();
 					  }
 					  else if (p->name() == "showseconds")
 					  {
