@@ -1,3 +1,20 @@
+/*  MDG Lightclock
+    Copyright (C) 2022  M. de Graaf
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #include <Arduino.h>
 #include <helperfunctions.h>
 #include <ezTime.h> // using modified library in /lib (changed host to timezoned.mdg-design.nl)
@@ -34,8 +51,8 @@ WiFiClient espClient;
 #define CLOCK_DISPLAYS 8					// Nr of user defined clock displays
 #define SCHEDULES 12						// Nr of user defined schedules
 #define AP_NAME "MDG-Ledclock1"				// Name of the AP when WIFI is not setup or connected
-//#define MQTT_DEBUG						// MQTT debug enabled
-#define COMPILE_DATE __DATE__ " " __TIME__  // Compile date/time
+#define MQTT_DEBUG							// MQTT debug enabled
+#define COMPILE_DATE __DATE__ " " __TIME__	// Compile date/time
 
 //mqtt async
 AsyncMqttClient mqttClient;
@@ -105,57 +122,66 @@ uint8_t background_rgb_red = 255;
 uint8_t background_rgb_green = 255;
 uint8_t background_rgb_blue = 255;
 
+boolean array_state[] = {hour_state, minute_state, second_state, hourmarks_state, background_state};
+uint8_t array_brightness[] = {hour_brightness, minute_brightness, second_brightness, hourmarks_brightness, background_brightness};
+uint8_t array_rgb_red[] = {hour_rgb_red, minute_rgb_red, second_rgb_red, hourmarks_rgb_red, background_rgb_red};
+uint8_t array_rgb_green[] = {hour_rgb_green, minute_rgb_green, second_rgb_green, hourmarks_rgb_green, background_rgb_green};
+uint8_t array_rgb_blue[] = {hour_rgb_blue, minute_rgb_blue, second_rgb_blue, hourmarks_rgb_blue, background_rgb_blue};
+
+int array_index;
+boolean topic_match = false;
+
 // MQTT: topics
 
 // Hour state
-const PROGMEM char *MQTT_HOUR_STATE_TOPIC = "/hour/status";
-const PROGMEM char *MQTT_HOUR_COMMAND_TOPIC = "/hour/switch";
+const PROGMEM char *MQTT_HOUR_STATE_TOPIC = "/hour/";
+const PROGMEM char *MQTT_HOUR_COMMAND_TOPIC = "/hour/set";
 // Hour brightness
 const PROGMEM char *MQTT_HOUR_BRIGHTNESS_STATE_TOPIC = "/hour/brightness/status";
-const PROGMEM char *MQTT_HOUR_BRIGHTNESS_COMMAND_TOPIC = "/hour/brightness/set";
+//const PROGMEM char *MQTT_HOUR_BRIGHTNESS_COMMAND_TOPIC = "/hour/brightness/set";
 // Hour colors (rgb)
 const PROGMEM char *MQTT_HOUR_RGB_STATE_TOPIC = "/hour/rgb/status";
-const PROGMEM char *MQTT_HOUR_RGB_COMMAND_TOPIC = "/hour/rgb/set";
+//const PROGMEM char *MQTT_HOUR_RGB_COMMAND_TOPIC = "/hour/rgb/set";
 
 // Minute state
-const PROGMEM char *MQTT_MINUTE_STATE_TOPIC = "/minute/status";
-const PROGMEM char *MQTT_MINUTE_COMMAND_TOPIC = "/minute/switch";
+const PROGMEM char *MQTT_MINUTE_STATE_TOPIC = "/minute/";
+const PROGMEM char *MQTT_MINUTE_COMMAND_TOPIC = "/minute/set";
 // Minute brightness
 const PROGMEM char *MQTT_MINUTE_BRIGHTNESS_STATE_TOPIC = "/minute/brightness/status";
-const PROGMEM char *MQTT_MINUTE_BRIGHTNESS_COMMAND_TOPIC = "/minute/brightness/set";
+//const PROGMEM char *MQTT_MINUTE_BRIGHTNESS_COMMAND_TOPIC = "/minute/brightness/set";
 // Minute colors (rgb)
 const PROGMEM char *MQTT_MINUTE_RGB_STATE_TOPIC = "/minute/rgb/status";
-const PROGMEM char *MQTT_MINUTE_RGB_COMMAND_TOPIC = "/minute/rgb/set";
+//const PROGMEM char *MQTT_MINUTE_RGB_COMMAND_TOPIC = "/minute/rgb/set";
 
 // Second state
-const PROGMEM char *MQTT_SECOND_STATE_TOPIC = "/second/status";
-const PROGMEM char *MQTT_SECOND_COMMAND_TOPIC = "/second/switch";
+const PROGMEM char *MQTT_SECOND_STATE_TOPIC = "/second/";
+const PROGMEM char *MQTT_SECOND_COMMAND_TOPIC = "/second/set";
 // Second brightness
 const PROGMEM char *MQTT_SECOND_BRIGHTNESS_STATE_TOPIC = "/second/brightness/status";
-const PROGMEM char *MQTT_SECOND_BRIGHTNESS_COMMAND_TOPIC = "/second/brightness/set";
+//const PROGMEM char *MQTT_SECOND_BRIGHTNESS_COMMAND_TOPIC = "/second/brightness/set";
 // Second colors (rgb)
 const PROGMEM char *MQTT_SECOND_RGB_STATE_TOPIC = "/second/rgb/status";
-const PROGMEM char *MQTT_SECOND_RGB_COMMAND_TOPIC = "/second/rgb/set";
+//const PROGMEM char *MQTT_SECOND_RGB_COMMAND_TOPIC = "/second/rgb/set";
 
 // Background state
-const PROGMEM char *MQTT_BACKGROUND_STATE_TOPIC = "/background/status";
-const PROGMEM char *MQTT_BACKGROUND_COMMAND_TOPIC = "/background/switch";
+const PROGMEM char *MQTT_BACKGROUND_STATE_TOPIC = "/background/";
+const PROGMEM char *MQTT_BACKGROUND_COMMAND_TOPIC = "/background/set";
 // Background brightness
 const PROGMEM char *MQTT_BACKGROUND_BRIGHTNESS_STATE_TOPIC = "/background/brightness/status";
-const PROGMEM char *MQTT_BACKGROUND_BRIGHTNESS_COMMAND_TOPIC = "/background/brightness/set";
+//const PROGMEM char *MQTT_BACKGROUND_BRIGHTNESS_COMMAND_TOPIC = "/background/brightness/set";
 // Background colors (rgb)
 const PROGMEM char *MQTT_BACKGROUND_RGB_STATE_TOPIC = "/background/rgb/status";
-const PROGMEM char *MQTT_BACKGROUND_RGB_COMMAND_TOPIC = "/background/rgb/set";
+//const PROGMEM char *MQTT_BACKGROUND_RGB_COMMAND_TOPIC = "/background/rgb/set";
 
 // Hourmarks state
-const PROGMEM char *MQTT_HOURMARKS_STATE_TOPIC = "/hourmarks/status";
-const PROGMEM char *MQTT_HOURMARKS_COMMAND_TOPIC = "/hourmarks/switch";
+const PROGMEM char *MQTT_HOURMARKS_STATE_TOPIC = "/hourmarks/";
+const PROGMEM char *MQTT_HOURMARKS_COMMAND_TOPIC = "/hourmarks/set";
 // Hourmarks brightness
 const PROGMEM char *MQTT_HOURMARKS_BRIGHTNESS_STATE_TOPIC = "/hourmarks/brightness/status";
-const PROGMEM char *MQTT_HOURMARKS_BRIGHTNESS_COMMAND_TOPIC = "/hourmarks/brightness/set";
+//const PROGMEM char *MQTT_HOURMARKS_BRIGHTNESS_COMMAND_TOPIC = "/hourmarks/brightness/set";
 // Hourmarks colors (rgb)
 const PROGMEM char *MQTT_HOURMARKS_RGB_STATE_TOPIC = "/hourmarks/rgb/status";
-const PROGMEM char *MQTT_HOURMARKS_RGB_COMMAND_TOPIC = "/hourmarks/rgb/set";
+//const PROGMEM char *MQTT_HOURMARKS_RGB_COMMAND_TOPIC = "/hourmarks/rgb/set";
 //Light sensor
 const PROGMEM char *MQTT_LIGHT_SENSOR_STATE_TOPIC = "/sensor/lux/status";
 
@@ -221,68 +247,36 @@ Timezone tz;
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);
 
-//PubSubClient mqttclient(espClient);
-
 // function called to adapt the brightness and the color of the led
-void setHourColor(uint8_t p_red, uint8_t p_green, uint8_t p_blue)
+void setColor(uint8_t p_red, uint8_t p_green, uint8_t p_blue, int p_index)
 {
 	// convert the brightness in % (0-100%) into a digital value (0-255)
-	uint8_t brightness = map(hour_brightness, 0, 100, 0, 255);
+	uint8_t brightness = map(array_brightness[p_index], 0, 100, 0, 255);
 
 	p_red = map(p_red, 0, 255, 0, brightness);
 	p_green = map(p_green, 0, 255, 0, brightness);
 	p_blue = map(p_blue, 0, 255, 0, brightness);
 
 	long RGB = ((long)p_red << 16L) | ((long)p_green << 8L) | (long)p_blue;
-	clockdisplays[config.activeclockdisplay].hourColor = RGB;
-}
-void setMinuteColor(uint8_t p_red, uint8_t p_green, uint8_t p_blue)
-{
-	// convert the brightness in % (0-100%) into a digital value (0-255)
-	uint8_t brightness = map(minute_brightness, 0, 100, 0, 255);
 
-	p_red = map(p_red, 0, 255, 0, brightness);
-	p_green = map(p_green, 0, 255, 0, brightness);
-	p_blue = map(p_blue, 0, 255, 0, brightness);
-
-	long RGB = ((long)p_red << 16L) | ((long)p_green << 8L) | (long)p_blue;
-	clockdisplays[config.activeclockdisplay].minuteColor = RGB;
-}
-void setSecondColor(uint8_t p_red, uint8_t p_green, uint8_t p_blue)
-{
-	// convert the brightness in % (0-100%) into a digital value (0-255)
-	uint8_t brightness = map(second_brightness, 0, 100, 0, 255);
-
-	p_red = map(p_red, 0, 255, 0, brightness);
-	p_green = map(p_green, 0, 255, 0, brightness);
-	p_blue = map(p_blue, 0, 255, 0, brightness);
-
-	long RGB = ((long)p_red << 16L) | ((long)p_green << 8L) | (long)p_blue;
-	clockdisplays[config.activeclockdisplay].secondColor = RGB;
-}
-void setBackgroundColor(uint8_t p_red, uint8_t p_green, uint8_t p_blue)
-{
-	// convert the brightness in % (0-100%) into a digital value (0-255)
-	uint8_t brightness = map(background_brightness, 0, 100, 0, 255);
-
-	p_red = map(p_red, 0, 255, 0, brightness);
-	p_green = map(p_green, 0, 255, 0, brightness);
-	p_blue = map(p_blue, 0, 255, 0, brightness);
-
-	long RGB = ((long)p_red << 16L) | ((long)p_green << 8L) | (long)p_blue;
-	clockdisplays[config.activeclockdisplay].backgroundColor = RGB;
-}
-void setHourmarksColor(uint8_t p_red, uint8_t p_green, uint8_t p_blue)
-{
-	// convert the brightness in % (0-100%) into a digital value (0-255)
-	uint8_t brightness = map(hourmarks_brightness, 0, 100, 0, 255);
-
-	p_red = map(p_red, 0, 255, 0, brightness);
-	p_green = map(p_green, 0, 255, 0, brightness);
-	p_blue = map(p_blue, 0, 255, 0, brightness);
-
-	long RGB = ((long)p_red << 16L) | ((long)p_green << 8L) | (long)p_blue;
-	clockdisplays[config.activeclockdisplay].hourMarkColor = RGB;
+	switch (p_index)
+	{
+	case 0:
+		clockdisplays[config.activeclockdisplay].hourColor = RGB;
+		break;
+	case 1:
+		clockdisplays[config.activeclockdisplay].minuteColor = RGB;
+		break;
+	case 2:
+		clockdisplays[config.activeclockdisplay].secondColor = RGB;
+		break;
+	case 3:
+		clockdisplays[config.activeclockdisplay].hourMarkColor = RGB;
+		break;
+	case 4:
+		clockdisplays[config.activeclockdisplay].backgroundColor = RGB;
+		break;
+	}
 }
 
 void publishRGBminuteColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
@@ -483,7 +477,7 @@ void onMqttConnect(bool sessionPresent)
 	Serial.print("Session present: ");
 	Serial.println(sessionPresent);
 #endif
-	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, "/#");
+	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, "/+/set");
 	uint16_t packetIdSub = mqttClient.subscribe(m_topic_buffer, 0);
 #ifdef MQTT_DEBUG
 	Serial.print("Subscribing at QoS 0, packetId: ");
@@ -537,381 +531,115 @@ void onMqttMessage(char *p_topic, char *p_payload, AsyncMqttClientMessagePropert
 		payload.concat((char)p_payload[i]);
 	}
 
+	DynamicJsonDocument mqttbuffer(128);
+
+	// Deserialize the JSON document
+	DeserializationError error_config = deserializeJson(mqttbuffer, payload);
+
+	if (error_config)
+	{
+		Serial.println("parseObject() failed");
+	}
+
 	if ((String(config.hostname) + String(MQTT_HOUR_COMMAND_TOPIC)).equals(p_topic))
 	{
-		// test if the payload is equal to "ON" or "OFF"
-		if (payload.equals(String(LIGHT_ON)))
-		{
-			if (hour_state != true)
-			{
-				hour_state = true;
-			}
-			publishRGBhourState();
-		}
-		else if (payload.equals(String(LIGHT_OFF)))
-		{
-			if (hour_state != false)
-			{
-				hour_state = false;
-			}
-			publishRGBhourState();
-		}
+		array_index = 0;
+		topic_match = true;
 	}
-	else if ((String(config.hostname) + String(MQTT_HOUR_BRIGHTNESS_COMMAND_TOPIC)).equals(p_topic))
-	{
-		uint8_t brightness = payload.toInt();
-		if (brightness < 0 || brightness > 100)
-		{
-			// do nothing...
-			return;
-		}
-		else
-		{
-			hour_brightness = brightness;
-			setHourColor(hour_rgb_red, hour_rgb_green, hour_rgb_blue);
-			publishRGBhourBrightness();
-		}
-	}
-	else if ((String(config.hostname) + String(MQTT_HOUR_RGB_COMMAND_TOPIC)).equals(p_topic))
-	{
-		// get the position of the first and second commas
-		uint8_t firstIndex = payload.indexOf(',');
-		uint8_t lastIndex = payload.lastIndexOf(',');
-
-		uint8_t rgb_red = payload.substring(0, firstIndex).toInt();
-		if (rgb_red < 0 || rgb_red > 255)
-		{
-			return;
-		}
-		else
-		{
-			hour_rgb_red = rgb_red;
-		}
-
-		uint8_t rgb_green = payload.substring(firstIndex + 1, lastIndex).toInt();
-		if (rgb_green < 0 || rgb_green > 255)
-		{
-			return;
-		}
-		else
-		{
-			hour_rgb_green = rgb_green;
-		}
-
-		uint8_t rgb_blue = payload.substring(lastIndex + 1).toInt();
-		if (rgb_blue < 0 || rgb_blue > 255)
-		{
-			return;
-		}
-		else
-		{
-			hour_rgb_blue = rgb_blue;
-		}
-		setHourColor(rgb_red, rgb_green, rgb_blue);
-		publishRGBhourColor(rgb_red, rgb_green, rgb_blue);
-	}
-
 	else if ((String(config.hostname) + String(MQTT_MINUTE_COMMAND_TOPIC)).equals(p_topic))
 	{
-
-		// test if the payload is equal to "ON" or "OFF"
-		if (payload.equals(String(LIGHT_ON)))
-		{
-			if (minute_state != true)
-			{
-				minute_state = true;
-			}
-			publishRGBminuteState();
-		}
-		else if (payload.equals(String(LIGHT_OFF)))
-		{
-			if (minute_state != false)
-			{
-				minute_state = false;
-			}
-			publishRGBminuteState();
-		}
+		array_index = 1;
+		topic_match = true;
 	}
-	else if ((String(config.hostname) + String(MQTT_MINUTE_BRIGHTNESS_COMMAND_TOPIC)).equals(p_topic))
-	{
-		uint8_t brightness = payload.toInt();
-		if (brightness < 0 || brightness > 100)
-		{
-			// do nothing...
-			return;
-		}
-		else
-		{
-			minute_brightness = brightness;
-			setMinuteColor(minute_rgb_red, minute_rgb_green, minute_rgb_blue);
-			publishRGBminuteBrightness();
-		}
-	}
-	else if ((String(config.hostname) + String(MQTT_MINUTE_RGB_COMMAND_TOPIC)).equals(p_topic))
-	{
-		// get the position of the first and second commas
-		uint8_t firstIndex = payload.indexOf(',');
-		uint8_t lastIndex = payload.lastIndexOf(',');
-
-		uint8_t rgb_red = payload.substring(0, firstIndex).toInt();
-		if (rgb_red < 0 || rgb_red > 255)
-		{
-			return;
-		}
-		else
-		{
-			minute_rgb_red = rgb_red;
-		}
-
-		uint8_t rgb_green = payload.substring(firstIndex + 1, lastIndex).toInt();
-		if (rgb_green < 0 || rgb_green > 255)
-		{
-			return;
-		}
-		else
-		{
-			minute_rgb_green = rgb_green;
-		}
-
-		uint8_t rgb_blue = payload.substring(lastIndex + 1).toInt();
-		if (rgb_blue < 0 || rgb_blue > 255)
-		{
-			return;
-		}
-		else
-		{
-			minute_rgb_blue = rgb_blue;
-		}
-		setMinuteColor(rgb_red, rgb_green, rgb_blue);
-		publishRGBminuteColor(rgb_red, rgb_green, rgb_blue);
-	}
-
-	else if ((String(config.hostname) + String(MQTT_SECOND_RGB_COMMAND_TOPIC)).equals(p_topic))
-	{
-		// get the position of the first and second commas
-		uint8_t firstIndex = payload.indexOf(',');
-		uint8_t lastIndex = payload.lastIndexOf(',');
-
-		uint8_t rgb_red = payload.substring(0, firstIndex).toInt();
-		if (rgb_red < 0 || rgb_red > 255)
-		{
-			return;
-		}
-		else
-		{
-			second_rgb_red = rgb_red;
-		}
-
-		uint8_t rgb_green = payload.substring(firstIndex + 1, lastIndex).toInt();
-		if (rgb_green < 0 || rgb_green > 255)
-		{
-			return;
-		}
-		else
-		{
-			second_rgb_green = rgb_green;
-		}
-
-		uint8_t rgb_blue = payload.substring(lastIndex + 1).toInt();
-		if (rgb_blue < 0 || rgb_blue > 255)
-		{
-			return;
-		}
-		else
-		{
-			second_rgb_blue = rgb_blue;
-		}
-		setSecondColor(rgb_red, rgb_green, rgb_blue);
-		publishRGBsecondColor(rgb_red, rgb_green, rgb_blue);
-	}
-	else if ((String(config.hostname) + String(MQTT_BACKGROUND_RGB_COMMAND_TOPIC)).equals(p_topic))
-	{
-		// get the position of the first and second commas
-		uint8_t firstIndex = payload.indexOf(',');
-		uint8_t lastIndex = payload.lastIndexOf(',');
-
-		uint8_t rgb_red = payload.substring(0, firstIndex).toInt();
-		if (rgb_red < 0 || rgb_red > 255)
-		{
-			return;
-		}
-		else
-		{
-			background_rgb_red = rgb_red;
-		}
-
-		uint8_t rgb_green = payload.substring(firstIndex + 1, lastIndex).toInt();
-		if (rgb_green < 0 || rgb_green > 255)
-		{
-			return;
-		}
-		else
-		{
-			background_rgb_green = rgb_green;
-		}
-
-		uint8_t rgb_blue = payload.substring(lastIndex + 1).toInt();
-		if (rgb_blue < 0 || rgb_blue > 255)
-		{
-			return;
-		}
-		else
-		{
-			background_rgb_blue = rgb_blue;
-		}
-		setBackgroundColor(rgb_red, rgb_green, rgb_blue);
-		publishRGBbackgroundColor(rgb_red, rgb_green, rgb_blue);
-	}
-	else if ((String(config.hostname) + String(MQTT_HOURMARKS_RGB_COMMAND_TOPIC)).equals(p_topic))
-	{
-		// get the position of the first and second commas
-		uint8_t firstIndex = payload.indexOf(',');
-		uint8_t lastIndex = payload.lastIndexOf(',');
-
-		uint8_t rgb_red = payload.substring(0, firstIndex).toInt();
-		if (rgb_red < 0 || rgb_red > 255)
-		{
-			return;
-		}
-		else
-		{
-			hourmarks_rgb_red = rgb_red;
-		}
-
-		uint8_t rgb_green = payload.substring(firstIndex + 1, lastIndex).toInt();
-		if (rgb_green < 0 || rgb_green > 255)
-		{
-			return;
-		}
-		else
-		{
-			hourmarks_rgb_green = rgb_green;
-		}
-
-		uint8_t rgb_blue = payload.substring(lastIndex + 1).toInt();
-		if (rgb_blue < 0 || rgb_blue > 255)
-		{
-			return;
-		}
-		else
-		{
-			hourmarks_rgb_blue = rgb_blue;
-		}
-		setHourmarksColor(rgb_red, rgb_green, rgb_blue);
-		publishRGBhourmarksColor(rgb_red, rgb_green, rgb_blue);
-	}
-
-	else if ((String(config.hostname) + String(MQTT_SECOND_BRIGHTNESS_COMMAND_TOPIC)).equals(p_topic))
-	{
-		uint8_t brightness = payload.toInt();
-		if (brightness < 0 || brightness > 100)
-		{
-			// do nothing...
-			return;
-		}
-		else
-		{
-			second_brightness = brightness;
-			setSecondColor(minute_rgb_red, minute_rgb_green, minute_rgb_blue);
-			publishRGBsecondBrightness();
-		}
-	}
-	else if ((String(config.hostname) + String(MQTT_BACKGROUND_BRIGHTNESS_COMMAND_TOPIC)).equals(p_topic))
-	{
-		uint8_t brightness = payload.toInt();
-		if (brightness < 0 || brightness > 100)
-		{
-			// do nothing...
-			return;
-		}
-		else
-		{
-			background_brightness = brightness;
-			setBackgroundColor(background_rgb_red, background_rgb_green, background_rgb_blue);
-			publishRGBbackgroundBrightness();
-		}
-	}
-	else if ((String(config.hostname) + String(MQTT_HOURMARKS_BRIGHTNESS_COMMAND_TOPIC)).equals(p_topic))
-	{
-		uint8_t brightness = payload.toInt();
-		if (brightness < 0 || brightness > 100)
-		{
-			// do nothing...
-			return;
-		}
-		else
-		{
-			hourmarks_brightness = brightness;
-			setHourmarksColor(hourmarks_rgb_red, hourmarks_rgb_green, hourmarks_rgb_blue);
-			publishRGBhourmarksBrightness();
-		}
-	}
-
 	else if ((String(config.hostname) + String(MQTT_SECOND_COMMAND_TOPIC)).equals(p_topic))
 	{
-		// test if the payload is equal to "ON" or "OFF"
-		if (payload.equals(String(LIGHT_ON)))
-		{
-
-			if (second_state != true)
-			{
-				second_state = true;
-			}
-			publishRGBsecondState();
-			clockdisplays[config.activeclockdisplay].showseconds = 1;
-		}
-		else if (payload.equals(String(LIGHT_OFF)))
-		{
-
-			if (second_state != false)
-			{
-				second_state = false;
-			}
-			publishRGBsecondState();
-			clockdisplays[config.activeclockdisplay].showseconds = 0;
-		}
-	}
-
-	else if ((String(config.hostname) + String(MQTT_BACKGROUND_COMMAND_TOPIC)).equals(p_topic))
-	{
-		// test if the payload is equal to "ON" or "OFF"
-		if (payload.equals(String(LIGHT_ON)))
-		{
-			if (background_state != true)
-			{
-				background_state = true;
-			}
-			setBackgroundColor(background_rgb_red, background_rgb_green, background_rgb_blue);
-			publishRGBbackgroundState();
-		}
-		else if (payload.equals(String(LIGHT_OFF)))
-		{
-			if (background_state != false)
-			{
-				background_state = false;
-			}
-			setBackgroundColor(0, 0, 0);
-			publishRGBbackgroundState();
-		}
+		array_index = 2;
+		topic_match = true;
 	}
 	else if ((String(config.hostname) + String(MQTT_HOURMARKS_COMMAND_TOPIC)).equals(p_topic))
 	{
-		// test if the payload is equal to "ON" or "OFF"
-		if (payload.equals(String(LIGHT_ON)))
+		array_index = 3;
+		topic_match = true;
+	}
+	else if ((String(config.hostname) + String(MQTT_BACKGROUND_COMMAND_TOPIC)).equals(p_topic))
+	{
+		array_index = 4;
+		topic_match = true;
+	}
+	else
+	{
+		topic_match = false;
+	}
+
+	if (topic_match) //only run when there is a mqtt topic match
+	{
+		if (mqttbuffer.containsKey("state"))
 		{
-			if (hourmarks_state != true)
+			if (strcmp(mqttbuffer["state"], LIGHT_ON) == 0)
 			{
-				hourmarks_state = true;
+				if (array_state[array_index] != true)
+				{
+					array_state[array_index] = true;
+				}
+				publishRGBhourState();
 			}
-			publishRGBhourmarksState();
+			else if (strcmp(mqttbuffer["state"], LIGHT_OFF) == 0)
+			{
+				if (array_state[array_index] != false)
+				{
+					array_state[array_index] = false;
+				}
+				publishRGBhourState();
+			}
 		}
-		else if (payload.equals(String(LIGHT_OFF)))
+		if (mqttbuffer.containsKey("brightness"))
 		{
-			if (hourmarks_state != false)
+			uint8_t brightness = uint8_t(mqttbuffer["brightness"]);
+			if (brightness < 0 || brightness > 100)
 			{
-				hourmarks_state = false;
+				// do nothing...
+				return;
 			}
-			publishRGBhourmarksState();
+			else
+			{
+				array_brightness[array_index] = brightness;
+				setColor(array_rgb_red[array_index], array_rgb_green[array_index], array_rgb_blue[array_index], array_index);
+				publishRGBhourBrightness();
+			}
+		}
+		if (mqttbuffer.containsKey("color"))
+		{
+			uint8_t rgb_red = uint8_t(mqttbuffer["color"]["r"]);
+			if (rgb_red < 0 || rgb_red > 255)
+			{
+				return;
+			}
+			else
+			{
+				array_rgb_red[array_index] = rgb_red;
+			}
+
+			uint8_t rgb_green = uint8_t(mqttbuffer["color"]["g"]);
+			if (rgb_green < 0 || rgb_green > 255)
+			{
+				return;
+			}
+			else
+			{
+				array_rgb_green[array_index] = rgb_green;
+			}
+
+			uint8_t rgb_blue = uint8_t(mqttbuffer["color"]["b"]);
+			if (rgb_blue < 0 || rgb_blue > 255)
+			{
+				return;
+			}
+			else
+			{
+				array_rgb_blue[array_index] = rgb_blue;
+			}
+			setColor(rgb_red, rgb_green, rgb_blue, array_index);
+			publishRGBhourColor(rgb_red, rgb_green, rgb_blue);
 		}
 	}
 }
@@ -919,7 +647,6 @@ void onMqttMessage(char *p_topic, char *p_payload, AsyncMqttClientMessagePropert
 // Replaces placeholder with section in your web page
 String processor(const String &var)
 {
-
 	if (var == "sliderBrightnessValue")
 	{
 		return String(sliderBrightnessValue);
@@ -946,7 +673,6 @@ String processor(const String &var)
 	}
 	if (var == "secondColor")
 	{
-
 		return String(inttoHex(clockdisplays[config.activeclockdisplay].secondColor, 6));
 	}
 	if (var == "showms")
@@ -974,7 +700,6 @@ String processor(const String &var)
 	{
 		return String(config.activeclockdisplay);
 	}
-
 	if (var == "compile_date_time")
 	{
 		return String(COMPILE_DATE);
@@ -1007,7 +732,6 @@ String processor(const String &var)
 	{
 		return String(CLOCK_MODEL);
 	}
-
 	if (var == "mqtt_connected")
 	{
 		if (MQTTConnected)
@@ -1019,7 +743,6 @@ String processor(const String &var)
 			return String("No");
 		}
 	}
-
 	return String();
 }
 
@@ -2010,10 +1733,17 @@ void loop()
 
 		for (int Led = 0; Led < 60; Led = Led + 1)
 		{
-			leds[rotate(Led)] = clockdisplays[config.activeclockdisplay].backgroundColor;
+			if (array_state[4]) //if background is on
+			{
+				leds[rotate(Led)] = clockdisplays[config.activeclockdisplay].backgroundColor;
+			}
+			else //if background is off
+			{
+				leds[rotate(Led)] = 0x000000;
+			}
 		}
 	}
-	if (hourmarks_state)
+	if (array_state[3])
 	{
 		//Set hour marks
 		for (int Led = 0; Led <= 55; Led = Led + 5)
@@ -2023,7 +1753,7 @@ void loop()
 		}
 	}
 
-	if (hour_state)
+	if (array_state[0])
 	{
 		//Hour hand
 		int houroffset = map(tz.minute(), 0, 60, 0, 5); //move the hour hand when the minutes pass
@@ -2043,10 +1773,19 @@ void loop()
 	} */
 	}
 
-	if (minute_state)
+	if (array_state[1])
 	{
 		//Minute hand
 		leds[rotate(tz.minute())] = clockdisplays[config.activeclockdisplay].minuteColor;
+	}
+
+	if (array_state[2]) //mqtt seconds on
+	{
+		clockdisplays[config.activeclockdisplay].showseconds = 1;
+	}
+	else //mqtt seconds off
+	{
+		clockdisplays[config.activeclockdisplay].showseconds = 0;
 	}
 
 	//Second hand
