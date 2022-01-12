@@ -34,8 +34,6 @@
 #include <index_html.h>
 #include <fonts.h>
 
-WiFiClient espClient;
-
 #define SOFTWARE_VERSION "1.2.0"			// Software version
 #define CLOCK_MODEL "MDG Ledclock model 1"	// Clock Model
 #define NUM_LEDS 60							// How many leds are in the clock?
@@ -51,34 +49,37 @@ WiFiClient espClient;
 #define CLOCK_DISPLAYS 8					// Nr of user defined clock displays
 #define SCHEDULES 12						// Nr of user defined schedules
 #define AP_NAME "MDG-Ledclock1"				// Name of the AP when WIFI is not setup or connected
-#define MQTT_DEBUG							// MQTT debug enabled
-#define COMPILE_DATE __DATE__ " " __TIME__	// Compile date/time
+//#define MQTT_DEBUG							 // MQTT debug enabled
+#define COMPILE_DATE __DATE__ " " __TIME__ // Compile date/time
 
-//mqtt async
+//Async MQTT
 AsyncMqttClient mqttClient;
 Ticker mqttReconnectTimer;
 
-const uint8_t MSG_BUFFER_SIZE = 20;
+//MQTT Payload buffer
+const uint8_t MSG_BUFFER_SIZE = 16;
 char m_msg_buffer[MSG_BUFFER_SIZE];
-
+//MQTT Topic buffer
 const uint8_t TOPIC_BUFFER_SIZE = 64;
 char m_topic_buffer[TOPIC_BUFFER_SIZE];
 
+boolean MQTTConnected = false; // Variable to store MQTT connected state
+
+//WiFi
+WiFiClient espClient;
 WiFiEventHandler wifiConnectHandler;
 WiFiEventHandler wifiDisconnectHandler;
 Ticker wifiReconnectTimer;
-
-long lastReconnectAttempt = 0;
-unsigned long lastExecutedMillis_brightness = 0;	  // Variable to save the last executed time
-unsigned long lastExecutedMillis_lightsensorMQTT = 0; // Variable to save the last executed time
-unsigned long currentMillis;
 boolean wifiConnected = false; // Variable to store wifi connected state
-boolean MQTTConnected = false; // Variable to store MQTT connected state
 unsigned char bssid[6];
 byte channel;
 int rssi = -999;
-float lightReading; // Variable to store the ambient light value
-float lux;			//LUX
+
+//Lightsensor
+unsigned long lastExecutedMillis_brightness = 0;	  // Variable to save the last executed time
+unsigned long lastExecutedMillis_lightsensorMQTT = 0; // Variable to save the last executed time
+float lightReading;									  // Variable to store the ambient light value
+float lux;											  //LUX
 
 // Define the number of samples to keep track of. The higher the number, the
 // more the readings will be smoothed, but the slower the output will respond to
@@ -91,11 +92,17 @@ int readIndex = 0;		   // the index of the current reading
 int total = 0;			   // the running total
 int average = 0;		   // the average
 
+//Keep track of the total runtime in mili's
+unsigned long currentMillis;
+
 CRGB leds[NUM_LEDS]; // This is an array of leds, one item for each led in the clock
 
 int sliderBrightnessValue = 128; // Variable to store brightness slidervalue in webserver
 
-// Variables used to store the mqtt state, the brightness and the color of the light
+// Variable used to store the mqtt state of the whole clock display
+boolean display_state = true;
+
+// Variables used to store the mqtt state, the brightness and the color of the specific clock items
 boolean hour_state = true;
 uint8_t hour_brightness = 100;
 uint8_t hour_rgb_red = 255;
@@ -122,66 +129,36 @@ uint8_t background_rgb_red = 255;
 uint8_t background_rgb_green = 255;
 uint8_t background_rgb_blue = 255;
 
+// Arrays with above variables
 boolean array_state[] = {hour_state, minute_state, second_state, hourmarks_state, background_state};
 uint8_t array_brightness[] = {hour_brightness, minute_brightness, second_brightness, hourmarks_brightness, background_brightness};
 uint8_t array_rgb_red[] = {hour_rgb_red, minute_rgb_red, second_rgb_red, hourmarks_rgb_red, background_rgb_red};
 uint8_t array_rgb_green[] = {hour_rgb_green, minute_rgb_green, second_rgb_green, hourmarks_rgb_green, background_rgb_green};
 uint8_t array_rgb_blue[] = {hour_rgb_blue, minute_rgb_blue, second_rgb_blue, hourmarks_rgb_blue, background_rgb_blue};
-
 int array_index;
 boolean topic_match = false;
+const char *state_topic;
 
 // MQTT: topics
 
+// Ledclock all state
+const PROGMEM char *MQTT_DISPLAY_STATE_TOPIC = "/display";
+const PROGMEM char *MQTT_DISPLAY_COMMAND_TOPIC = "/display/set";
 // Hour state
-const PROGMEM char *MQTT_HOUR_STATE_TOPIC = "/hour/";
+const PROGMEM char *MQTT_HOUR_STATE_TOPIC = "/hour/state";
 const PROGMEM char *MQTT_HOUR_COMMAND_TOPIC = "/hour/set";
-// Hour brightness
-const PROGMEM char *MQTT_HOUR_BRIGHTNESS_STATE_TOPIC = "/hour/brightness/status";
-//const PROGMEM char *MQTT_HOUR_BRIGHTNESS_COMMAND_TOPIC = "/hour/brightness/set";
-// Hour colors (rgb)
-const PROGMEM char *MQTT_HOUR_RGB_STATE_TOPIC = "/hour/rgb/status";
-//const PROGMEM char *MQTT_HOUR_RGB_COMMAND_TOPIC = "/hour/rgb/set";
-
 // Minute state
-const PROGMEM char *MQTT_MINUTE_STATE_TOPIC = "/minute/";
+const PROGMEM char *MQTT_MINUTE_STATE_TOPIC = "/minute/state";
 const PROGMEM char *MQTT_MINUTE_COMMAND_TOPIC = "/minute/set";
-// Minute brightness
-const PROGMEM char *MQTT_MINUTE_BRIGHTNESS_STATE_TOPIC = "/minute/brightness/status";
-//const PROGMEM char *MQTT_MINUTE_BRIGHTNESS_COMMAND_TOPIC = "/minute/brightness/set";
-// Minute colors (rgb)
-const PROGMEM char *MQTT_MINUTE_RGB_STATE_TOPIC = "/minute/rgb/status";
-//const PROGMEM char *MQTT_MINUTE_RGB_COMMAND_TOPIC = "/minute/rgb/set";
-
 // Second state
-const PROGMEM char *MQTT_SECOND_STATE_TOPIC = "/second/";
+const PROGMEM char *MQTT_SECOND_STATE_TOPIC = "/second/state";
 const PROGMEM char *MQTT_SECOND_COMMAND_TOPIC = "/second/set";
-// Second brightness
-const PROGMEM char *MQTT_SECOND_BRIGHTNESS_STATE_TOPIC = "/second/brightness/status";
-//const PROGMEM char *MQTT_SECOND_BRIGHTNESS_COMMAND_TOPIC = "/second/brightness/set";
-// Second colors (rgb)
-const PROGMEM char *MQTT_SECOND_RGB_STATE_TOPIC = "/second/rgb/status";
-//const PROGMEM char *MQTT_SECOND_RGB_COMMAND_TOPIC = "/second/rgb/set";
-
 // Background state
-const PROGMEM char *MQTT_BACKGROUND_STATE_TOPIC = "/background/";
+const PROGMEM char *MQTT_BACKGROUND_STATE_TOPIC = "/background/state";
 const PROGMEM char *MQTT_BACKGROUND_COMMAND_TOPIC = "/background/set";
-// Background brightness
-const PROGMEM char *MQTT_BACKGROUND_BRIGHTNESS_STATE_TOPIC = "/background/brightness/status";
-//const PROGMEM char *MQTT_BACKGROUND_BRIGHTNESS_COMMAND_TOPIC = "/background/brightness/set";
-// Background colors (rgb)
-const PROGMEM char *MQTT_BACKGROUND_RGB_STATE_TOPIC = "/background/rgb/status";
-//const PROGMEM char *MQTT_BACKGROUND_RGB_COMMAND_TOPIC = "/background/rgb/set";
-
 // Hourmarks state
-const PROGMEM char *MQTT_HOURMARKS_STATE_TOPIC = "/hourmarks/";
+const PROGMEM char *MQTT_HOURMARKS_STATE_TOPIC = "/hourmarks/state";
 const PROGMEM char *MQTT_HOURMARKS_COMMAND_TOPIC = "/hourmarks/set";
-// Hourmarks brightness
-const PROGMEM char *MQTT_HOURMARKS_BRIGHTNESS_STATE_TOPIC = "/hourmarks/brightness/status";
-//const PROGMEM char *MQTT_HOURMARKS_BRIGHTNESS_COMMAND_TOPIC = "/hourmarks/brightness/set";
-// Hourmarks colors (rgb)
-const PROGMEM char *MQTT_HOURMARKS_RGB_STATE_TOPIC = "/hourmarks/rgb/status";
-//const PROGMEM char *MQTT_HOURMARKS_RGB_COMMAND_TOPIC = "/hourmarks/rgb/set";
 //Light sensor
 const PROGMEM char *MQTT_LIGHT_SENSOR_STATE_TOPIC = "/sensor/lux/status";
 
@@ -279,161 +256,50 @@ void setColor(uint8_t p_red, uint8_t p_green, uint8_t p_blue, int p_index)
 	}
 }
 
-void publishRGBminuteColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
+void publishState(int index, const char *TOPIC)
 {
 
-	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d,%d,%d", rgb_red, rgb_green, rgb_blue);
-	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_MINUTE_RGB_STATE_TOPIC);
-
-	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
-}
-void publishRGBminuteBrightness()
-{
-	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d", minute_brightness);
-	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_MINUTE_BRIGHTNESS_STATE_TOPIC);
-	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
-}
-void publishRGBminuteState()
-
-{
-	if (minute_state)
+	DynamicJsonDocument mqtt_payload(256);
+	if (!(String(MQTT_DISPLAY_STATE_TOPIC)).equals(TOPIC) && index > -1)
 	{
-		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_MINUTE_STATE_TOPIC);
-		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_ON);
+		mqtt_payload["state"] = array_state[index] ? LIGHT_ON : LIGHT_OFF;
+		mqtt_payload["brightness"] = array_brightness[index];
+
+		JsonObject color = mqtt_payload.createNestedObject("color");
+		color["r"] = array_rgb_red[index];
+		color["g"] = array_rgb_green[index];
+		color["b"] = array_rgb_blue[index];
+		mqtt_payload["color_mode"] = "rgb";
 	}
-	else
+	else //only state and brightness is needed for complete display
 	{
-		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_MINUTE_STATE_TOPIC);
-		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_OFF);
+		mqtt_payload["state"] = display_state ? LIGHT_ON : LIGHT_OFF;
+		mqtt_payload["brightness"] = map(clockdisplays[config.activeclockdisplay].brightness, 0, 255, 0, 100);
 	}
-}
 
-void publishRGBsecondBrightness()
-{
-	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d", second_brightness);
-	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_SECOND_BRIGHTNESS_STATE_TOPIC);
-	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
-}
-void publishRGBsecondColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
-{
+	char mqtt_payload_buffer[measureJson(mqtt_payload) + 1];
+	serializeJson(mqtt_payload, mqtt_payload_buffer, sizeof(mqtt_payload_buffer));
 
-	//Serial.print ("send rgb");
+	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, TOPIC);
 
-	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d,%d,%d", rgb_red, rgb_green, rgb_blue);
-	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_SECOND_RGB_STATE_TOPIC);
-	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
-}
-void publishRGBsecondState()
+	Serial.println(mqtt_payload_buffer);
 
-{
-
-	if (second_state)
-	{
-
-		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_SECOND_STATE_TOPIC);
-		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_ON);
-	}
-	else
-	{
-		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_SECOND_STATE_TOPIC);
-		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_OFF);
-	}
-}
-
-void publishRGBhourBrightness()
-{
-	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d", hour_brightness);
-	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_HOUR_BRIGHTNESS_STATE_TOPIC);
-	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
-}
-void publishRGBhourColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
-{
-
-	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d,%d,%d", rgb_red, rgb_green, rgb_blue);
-	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_HOUR_RGB_STATE_TOPIC);
-
-	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
-}
-void publishRGBhourState()
-
-{
-	if (hour_state)
-	{
-		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_HOUR_STATE_TOPIC);
-		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_ON);
-	}
-	else
-	{
-		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_HOUR_STATE_TOPIC);
-		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_OFF);
-	}
-}
-
-void publishRGBbackgroundBrightness()
-{
-	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d", background_brightness);
-	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_BACKGROUND_BRIGHTNESS_STATE_TOPIC);
-	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
-}
-void publishRGBbackgroundColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
-{
-
-	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d,%d,%d", rgb_red, rgb_green, rgb_blue);
-	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_BACKGROUND_RGB_STATE_TOPIC);
-	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
-}
-void publishRGBbackgroundState()
-{
-	if (background_state)
-	{
-		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_BACKGROUND_STATE_TOPIC);
-		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_ON);
-	}
-	else
-	{
-		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_BACKGROUND_STATE_TOPIC);
-		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_OFF);
-	}
-}
-
-void publishRGBhourmarksBrightness()
-{
-	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d", hourmarks_brightness);
-	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_HOURMARKS_BRIGHTNESS_STATE_TOPIC);
-	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
-}
-void publishRGBhourmarksColor(uint8_t rgb_red, uint8_t rgb_green, uint8_t rgb_blue)
-{
-
-	snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%d,%d,%d", rgb_red, rgb_green, rgb_blue);
-	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_HOURMARKS_RGB_STATE_TOPIC);
-	mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
-}
-void publishRGBhourmarksState()
-{
-	if (hourmarks_state)
-	{
-		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_HOURMARKS_STATE_TOPIC);
-		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_ON);
-	}
-	else
-	{
-		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_HOURMARKS_STATE_TOPIC);
-		mqttClient.publish(m_topic_buffer, 0, true, LIGHT_OFF);
-	}
+	mqttClient.publish(m_topic_buffer, 0, true, mqtt_payload_buffer);
 }
 
 void connectToMqtt()
 {
-	//Serial.println("Connecting to MQTT...");
+#ifdef MQTT_DEBUG
+	Serial.println("Connecting to MQTT...");
+#endif
 	mqttClient.connect();
 }
 
 void onWifiConnect(const WiFiEventStationModeGotIP &event)
 {
-#ifdef MQTT_DEBUG
-	Serial.println("Connected to Wi-Fi.");
-#endif
+
+	//Serial.println("Connected to Wi-Fi.");
+
 	if (strlen(config.mqttserver))
 	{
 		connectToMqtt();
@@ -485,13 +351,6 @@ void onMqttConnect(bool sessionPresent)
 #endif
 	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, "/status/");
 	mqttClient.publish(m_topic_buffer, 0, true, "Online");
-	/* Serial.println("Publishing at QoS 0");
-  uint16_t packetIdPub1 = mqttClient.publish("mdg/test/lol", 1, true, "test 2");
-  Serial.print("Publishing at QoS 1, packetId: ");
-  Serial.println(packetIdPub1);
-  uint16_t packetIdPub2 = mqttClient.publish("mdg/test/lol", 2, true, "test 3");
-  Serial.print("Publishing at QoS 2, packetId: ");
-  Serial.println(packetIdPub2); */
 }
 
 void onMqttSubscribe(uint16_t packetId, uint8_t qos)
@@ -538,31 +397,77 @@ void onMqttMessage(char *p_topic, char *p_payload, AsyncMqttClientMessagePropert
 
 	if (error_config)
 	{
+#ifdef MQTT_DEBUG
 		Serial.println("parseObject() failed");
+#endif
 	}
 
+	if ((String(config.hostname) + String(MQTT_DISPLAY_COMMAND_TOPIC)).equals(p_topic)) //complete clock display on/off + complete clock overall brightness
+	{
+		if (mqttbuffer.containsKey("state"))
+		{
+			if (strcmp(mqttbuffer["state"], LIGHT_ON) == 0)
+			{
+				if (display_state != true)
+				{
+					display_state = true;
+				}
+			}
+			else if (strcmp(mqttbuffer["state"], LIGHT_OFF) == 0)
+			{
+				if (display_state != false)
+				{
+					display_state = false;
+				}
+			}
+		}
+		if (mqttbuffer.containsKey("brightness"))
+		{
+			uint8_t brightness = uint8_t(mqttbuffer["brightness"]);
+			if (brightness < 0 || brightness > 100)
+			{
+				// do nothing...
+				return;
+			}
+			else
+			{
+				clockdisplays[config.activeclockdisplay].brightness = map(brightness, 0, 100, 0, 255);
+
+				int NumtToBrightness = map(clockdisplays[config.activeclockdisplay].brightness, 0, 255, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
+				FastLED.setBrightness(NumtToBrightness);
+			}
+		}
+		publishState(-1, MQTT_DISPLAY_STATE_TOPIC); //publish MQTT state topic
+	}
+
+	// Clock specific items (hour, minute, second, hour marks, background)
 	if ((String(config.hostname) + String(MQTT_HOUR_COMMAND_TOPIC)).equals(p_topic))
 	{
+		state_topic = MQTT_HOUR_STATE_TOPIC;
 		array_index = 0;
 		topic_match = true;
 	}
 	else if ((String(config.hostname) + String(MQTT_MINUTE_COMMAND_TOPIC)).equals(p_topic))
 	{
+		state_topic = MQTT_MINUTE_STATE_TOPIC;
 		array_index = 1;
 		topic_match = true;
 	}
 	else if ((String(config.hostname) + String(MQTT_SECOND_COMMAND_TOPIC)).equals(p_topic))
 	{
+		state_topic = MQTT_SECOND_STATE_TOPIC;
 		array_index = 2;
 		topic_match = true;
 	}
 	else if ((String(config.hostname) + String(MQTT_HOURMARKS_COMMAND_TOPIC)).equals(p_topic))
 	{
+		state_topic = MQTT_HOURMARKS_STATE_TOPIC;
 		array_index = 3;
 		topic_match = true;
 	}
 	else if ((String(config.hostname) + String(MQTT_BACKGROUND_COMMAND_TOPIC)).equals(p_topic))
 	{
+		state_topic = MQTT_BACKGROUND_STATE_TOPIC;
 		array_index = 4;
 		topic_match = true;
 	}
@@ -581,7 +486,7 @@ void onMqttMessage(char *p_topic, char *p_payload, AsyncMqttClientMessagePropert
 				{
 					array_state[array_index] = true;
 				}
-				publishRGBhourState();
+				display_state = true; //turn on display when one of the clock objects is changed
 			}
 			else if (strcmp(mqttbuffer["state"], LIGHT_OFF) == 0)
 			{
@@ -589,7 +494,6 @@ void onMqttMessage(char *p_topic, char *p_payload, AsyncMqttClientMessagePropert
 				{
 					array_state[array_index] = false;
 				}
-				publishRGBhourState();
 			}
 		}
 		if (mqttbuffer.containsKey("brightness"))
@@ -597,14 +501,14 @@ void onMqttMessage(char *p_topic, char *p_payload, AsyncMqttClientMessagePropert
 			uint8_t brightness = uint8_t(mqttbuffer["brightness"]);
 			if (brightness < 0 || brightness > 100)
 			{
-				// do nothing...
+				//do nothing...
 				return;
 			}
 			else
 			{
 				array_brightness[array_index] = brightness;
 				setColor(array_rgb_red[array_index], array_rgb_green[array_index], array_rgb_blue[array_index], array_index);
-				publishRGBhourBrightness();
+				display_state = true; //turn on display when one of the clock objects is changed
 			}
 		}
 		if (mqttbuffer.containsKey("color"))
@@ -639,12 +543,12 @@ void onMqttMessage(char *p_topic, char *p_payload, AsyncMqttClientMessagePropert
 				array_rgb_blue[array_index] = rgb_blue;
 			}
 			setColor(rgb_red, rgb_green, rgb_blue, array_index);
-			publishRGBhourColor(rgb_red, rgb_green, rgb_blue);
 		}
+		publishState(array_index, state_topic); //publish MQTT state topic
 	}
 }
 
-// Replaces placeholder with section in your web page
+// Replaces placeholder %xxx% with section in web page
 String processor(const String &var)
 {
 	if (var == "sliderBrightnessValue")
@@ -1131,7 +1035,7 @@ void setup()
 	FastLED.setMaxPowerInVoltsAndMilliamps(NEOPIXEL_VOLTAGE, NEOPIXEL_MILLIAMPS); //max 1 amp power usage
 
 	FastLED.addLeds<SK6812, DATA_PIN, GRB>(leds, NUM_LEDS) // GRB ordering is typical
-														   //.setCorrection(TypicalLEDStrip);
+														   //													   .setCorrection(TypicalLEDStrip);
 		.setCorrection(0xFFFFFF);						   //No correction
 	FastLED.setMaxRefreshRate(0);
 
@@ -1268,22 +1172,6 @@ void setup()
 				  response->addHeader("Cache-Control", "max-age=31536000");
 				  response->addHeader("Content-Encoding", "gzip");
 				  response->addHeader("ETag", String(mdg_ledr_css_gz_len));
-				  request->send(response);
-			  });
-	server.on("/mdi-font.ttf", HTTP_GET, [](AsyncWebServerRequest *request)
-			  {
-				  AsyncWebServerResponse *response = request->beginResponse_P(200, "font", mdi_font_ttf_gz, mdi_font_ttf_gz_len);
-				  response->addHeader("Cache-Control", "max-age=31536000");
-				  response->addHeader("Content-Encoding", "gzip");
-				  response->addHeader("ETag", String(mdi_font_ttf_gz_len));
-				  request->send(response);
-			  });
-	server.on("/mdi-font.woff", HTTP_GET, [](AsyncWebServerRequest *request)
-			  {
-				  AsyncWebServerResponse *response = request->beginResponse_P(200, "font", mdi_font_woff_gz, mdi_font_woff_gz_len);
-				  response->addHeader("Cache-Control", "max-age=31536000");
-				  response->addHeader("Content-Encoding", "gzip");
-				  response->addHeader("ETag", String(mdi_font_woff_gz_len));
 				  request->send(response);
 			  });
 	server.on("/mdi-font.woff2", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -1733,7 +1621,7 @@ void loop()
 
 		for (int Led = 0; Led < 60; Led = Led + 1)
 		{
-			if (array_state[4]) //if background is on
+			if (array_state[4] && display_state) //if background is on
 			{
 				leds[rotate(Led)] = clockdisplays[config.activeclockdisplay].backgroundColor;
 			}
@@ -1743,7 +1631,7 @@ void loop()
 			}
 		}
 	}
-	if (array_state[3])
+	if (array_state[3] & display_state)
 	{
 		//Set hour marks
 		for (int Led = 0; Led <= 55; Led = Led + 5)
@@ -1753,7 +1641,7 @@ void loop()
 		}
 	}
 
-	if (array_state[0])
+	if (array_state[0] && display_state)
 	{
 		//Hour hand
 		int houroffset = map(tz.minute(), 0, 60, 0, 5); //move the hour hand when the minutes pass
@@ -1773,13 +1661,13 @@ void loop()
 	} */
 	}
 
-	if (array_state[1])
+	if (array_state[1] && display_state)
 	{
 		//Minute hand
 		leds[rotate(tz.minute())] = clockdisplays[config.activeclockdisplay].minuteColor;
 	}
 
-	if (array_state[2]) //mqtt seconds on
+	if (array_state[2] && display_state) //mqtt seconds on
 	{
 		clockdisplays[config.activeclockdisplay].showseconds = 1;
 	}
@@ -1789,7 +1677,7 @@ void loop()
 	}
 
 	//Second hand
-	if (clockdisplays[config.activeclockdisplay].showseconds == 1)
+	if (clockdisplays[config.activeclockdisplay].showseconds == 1 && display_state)
 	{
 
 		/*
