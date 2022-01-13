@@ -24,15 +24,16 @@
 #include <ESP8266mDNS.h>
 #include <FastLED.h>
 #include <AsyncMqttClient.h>
+#include <PubSubClient.h>
 #include <ESPAsyncTCP.h> //	using modified library in /lib to correct SSL error when compiling with build_flags = -DASYNC_TCP_SSL_ENABLED=1  see (https://github.com/mhightower83/ESPAsyncTCP#correct-ssl-_recv) when this pull request is complete we can continue to use the original library.
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <Ticker.h>
-#include <mdg_ledr_js.h>
-#include <mdg_ledr_css.h>
-#include <index_html.h>
-#include <fonts.h>
+#include <web/mdg_ledr_js.h>
+#include <web/mdg_ledr_css.h>
+#include <web/index_html.h>
+#include <web/fonts.h>
 
 #define SOFTWARE_VERSION "1.2.0"			// Software version
 #define CLOCK_MODEL "MDG Ledclock model 1"	// Clock Model
@@ -66,7 +67,7 @@ char m_topic_buffer[TOPIC_BUFFER_SIZE];
 boolean MQTTConnected = false; // Variable to store MQTT connected state
 
 //WiFi
-WiFiClient espClient;
+//WiFiClient espClient;
 WiFiEventHandler wifiConnectHandler;
 WiFiEventHandler wifiDisconnectHandler;
 Ticker wifiReconnectTimer;
@@ -1052,6 +1053,7 @@ void setup()
 	mqttClient.setClientId(config.hostname);
 	if (config.mqtttls == 1)
 	{
+
 		//Serial.println("Secure MQTT");
 		mqttClient.setSecure(true);
 	}
@@ -1087,9 +1089,9 @@ void setup()
 		//Only when there is a wifi connection get time from NTP
 		waitForSync();
 
-		WiFiClient client;
+		WiFiClient httpclient;
 
-		//ESPhttpUpdate.update(client, "192.168.178.100", 90, "/bin/firmware.bin");
+		//ESPhttpUpdate.update(httpclient, "192.168.178.100", 90, "/bin/firmware.bin");
 	}
 	else
 	{
