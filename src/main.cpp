@@ -23,13 +23,11 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 #include <FastLED.h>
-#include <AsyncMqttClient.h>
 #include <PubSubClient.h>
 #include <ESPAsyncTCP.h> //	using modified library in /lib to correct SSL error when compiling with build_flags = -DASYNC_TCP_SSL_ENABLED=1  see (https://github.com/mhightower83/ESPAsyncTCP#correct-ssl-_recv) when this pull request is complete we can continue to use the original library.
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
-#include <Ticker.h>
 #include <web/mdg_ledr_js.h>
 #include <web/mdg_ledr_css.h>
 #include <web/index_html.h>
@@ -50,12 +48,15 @@
 #define CLOCK_DISPLAYS 8					// Nr of user defined clock displays
 #define SCHEDULES 12						// Nr of user defined schedules
 #define AP_NAME "MDG-Ledclock1"				// Name of the AP when WIFI is not setup or connected
-//#define MQTT_DEBUG							 // MQTT debug enabled
-#define COMPILE_DATE __DATE__ " " __TIME__ // Compile date/time
+//#define MQTT_DEBUG						// MQTT debug enabled
+#define COMPILE_DATE __DATE__ " " __TIME__  // Compile date/time
 
-//Async MQTT
-AsyncMqttClient mqttClient;
-Ticker mqttReconnectTimer;
+//MQTT
+long lastReconnectAttempt = 0;
+boolean MQTTConnected = false; // Variable to store MQTT connected state
+BearSSL::WiFiClientSecure TLSClient;
+WiFiClient espClient;
+PubSubClient mqttClient; //uninitialised pubsub client instance. The client is initialised as TLS or espClient in setup()
 
 //MQTT Payload buffer
 const uint8_t MSG_BUFFER_SIZE = 16;
@@ -64,13 +65,7 @@ char m_msg_buffer[MSG_BUFFER_SIZE];
 const uint8_t TOPIC_BUFFER_SIZE = 64;
 char m_topic_buffer[TOPIC_BUFFER_SIZE];
 
-boolean MQTTConnected = false; // Variable to store MQTT connected state
-
 //WiFi
-//WiFiClient espClient;
-WiFiEventHandler wifiConnectHandler;
-WiFiEventHandler wifiDisconnectHandler;
-Ticker wifiReconnectTimer;
 boolean wifiConnected = false; // Variable to store wifi connected state
 unsigned char bssid[6];
 byte channel;
@@ -141,7 +136,6 @@ boolean topic_match = false;
 const char *state_topic;
 
 // MQTT: topics
-
 // Ledclock all state
 const PROGMEM char *MQTT_DISPLAY_STATE_TOPIC = "/display/state";
 const PROGMEM char *MQTT_DISPLAY_COMMAND_TOPIC = "/display/set";
@@ -283,108 +277,47 @@ void publishState(int index, const char *TOPIC)
 
 	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, TOPIC);
 
+#ifdef MQTT_DEBUG
 	Serial.println(m_topic_buffer);
 	Serial.println(mqtt_payload_buffer);
-
-	mqttClient.publish(m_topic_buffer, 0, true, mqtt_payload_buffer);
+#endif
+	mqttClient.publish(m_topic_buffer, mqtt_payload_buffer, true);
 }
 
-void connectToMqtt()
+boolean MQTTconnect()
 {
 #ifdef MQTT_DEBUG
-	Serial.println("Connecting to MQTT...");
+	Serial.println("INFO: Attempting MQTT connection...");
 #endif
-	mqttClient.connect();
-}
+	// Attempt to connect
 
-void onWifiConnect(const WiFiEventStationModeGotIP &event)
-{
-
-	//Serial.println("Connected to Wi-Fi.");
-
-	if (strlen(config.mqttserver))
+	if (mqttClient.connect(config.hostname, config.mqttuser, config.mqttpassword))
 	{
-		connectToMqtt();
-	}
-}
-
-void onWifiDisconnect(const WiFiEventStationModeDisconnected &event)
-{
-	//Serial.println("Disconnected from Wi-Fi.");
-	mqttReconnectTimer.detach(); // ensure we don't reconnect to MQTT while reconnecting to Wi-Fi
-								 //wifiReconnectTimer.once(2, connectToWifi);
-}
-
-void onMqttDisconnect(AsyncMqttClientDisconnectReason reason)
-{
-	MQTTConnected = false;
 #ifdef MQTT_DEBUG
-	Serial.println("Disconnected from MQTT.");
+		Serial.println("INFO: connected");
 #endif
+		snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, "/+/set");
+#ifdef MQTT_DEBUG
+		Serial.println("Subscribe to: " + String(m_topic_buffer));
+#endif
+		mqttClient.subscribe(m_topic_buffer);
 
-	if (WiFi.isConnected())
+		MQTTConnected = true;
+	}
+	else
 	{
-		mqttReconnectTimer.once(2, connectToMqtt);
+#ifdef MQTT_DEBUG
+		Serial.print("ERROR: failed, rc=");
+		Serial.print(mqttClient.state());
+		Serial.println("DEBUG: try again in 5 seconds");
+#endif
+		MQTTConnected = false;
 	}
+	return mqttClient.connected();
 }
 
-void onMqttPublish(uint16_t packetId)
+void callback(char *p_topic, byte *p_payload, unsigned int p_length)
 {
-#ifdef MQTT_DEBUG
-	Serial.println("Publish acknowledged.");
-	Serial.print("  packetId: ");
-	Serial.println(packetId);
-#endif
-}
-
-void onMqttConnect(bool sessionPresent)
-{
-	MQTTConnected = true;
-#ifdef MQTT_DEBUG
-	Serial.println("Connected to MQTT.");
-	Serial.print("Session present: ");
-	Serial.println(sessionPresent);
-#endif
-	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, "/+/set");
-	uint16_t packetIdSub = mqttClient.subscribe(m_topic_buffer, 0);
-#ifdef MQTT_DEBUG
-	Serial.print("Subscribing at QoS 0, packetId: ");
-	Serial.println(packetIdSub);
-#endif
-	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, "/status/");
-	mqttClient.publish(m_topic_buffer, 0, true, "Online");
-}
-
-void onMqttSubscribe(uint16_t packetId, uint8_t qos)
-{
-#ifdef MQTT_DEBUG
-	Serial.println("Subscribe acknowledged.");
-	Serial.print("  packetId: ");
-	Serial.println(packetId);
-	Serial.print("  qos: ");
-	Serial.println(qos);
-#endif
-}
-
-void onMqttMessage(char *p_topic, char *p_payload, AsyncMqttClientMessageProperties properties, size_t p_length, size_t index, size_t total)
-{
-#ifdef MQTT_DEBUG
-	Serial.println("Publish received.");
-	Serial.print("  topic: ");
-	Serial.println(p_topic);
-	Serial.print("  qos: ");
-	Serial.println(properties.qos);
-	Serial.print("  dup: ");
-	Serial.println(properties.dup);
-	Serial.print("  retain: ");
-	Serial.println(properties.retain);
-	Serial.print("  len: ");
-	Serial.println(p_length);
-	Serial.print("  index: ");
-	Serial.println(index);
-	Serial.print("  total: ");
-	Serial.println(total);
-#endif
 
 	String payload;
 	for (uint8_t i = 0; i < p_length; i++)
@@ -724,8 +657,6 @@ void saveConfiguration(const char *filename)
 	doc["mpw"] = config.mqttpassword;
 	doc["mt"] = config.mqtttls;
 
-	//Serial.print(config.tz);
-
 	// Serialize JSON to file
 	if (serializeJson(doc, configfile) == 0)
 	{
@@ -1041,32 +972,25 @@ void setup()
 	FastLED.setMaxRefreshRate(0);
 
 	//MQTT
-	mqttClient.onConnect(onMqttConnect);
-	mqttClient.onDisconnect(onMqttDisconnect);
-	mqttClient.onPublish(onMqttPublish);
-	mqttClient.onMessage(onMqttMessage);
-	mqttClient.onSubscribe(onMqttSubscribe);
-	if (strlen(config.mqttuser) != 0 && strlen(config.mqttpassword) != 0) //do not set credentials when MQTT user and MQTT password are empty
-	{
-		mqttClient.setCredentials(config.mqttuser, config.mqttpassword);
-	}
-	mqttClient.setClientId(config.hostname);
-	if (config.mqtttls == 1)
+
+	//
+	if (config.mqtttls == 1) //TLS enabled
 	{
 
-		//Serial.println("Secure MQTT");
-		mqttClient.setSecure(true);
+		TLSClient.setInsecure();
+		mqttClient.setClient(TLSClient);
+		mqttClient.setSocketTimeout(1);
 	}
-	else
+	else //TLS disabled
 	{
-		//Serial.println("Insecure MQTT");
+		mqttClient.setClient(espClient);
 	}
+
 	mqttClient.setServer(config.mqttserver, config.mqttport);
+	mqttClient.setCallback(callback);
+	mqttClient.setSocketTimeout(1);
 
 	//WIFI
-	wifiConnectHandler = WiFi.onStationModeGotIP(onWifiConnect);
-	wifiDisconnectHandler = WiFi.onStationModeDisconnected(onWifiDisconnect);
-
 	WiFi.mode(WIFI_STA);
 
 	WiFi.hostname(config.hostname);
@@ -1076,7 +1000,6 @@ void setup()
 	if (rssi != -999) //connect to strongest ap
 	{
 		WiFi.begin(config.ssid, config.wifipassword, channel);
-		//Serial.println("Connected to channel: " + String(channel));
 	}
 	else
 	{
@@ -1086,11 +1009,10 @@ void setup()
 	if (checkConnection())
 	{
 		wifiConnected = true;
-		//Only when there is a wifi connection get time from NTP
 		waitForSync();
+		MQTTconnect();
 
-		WiFiClient httpclient;
-
+		//WiFiClient httpclient;
 		//ESPhttpUpdate.update(httpclient, "192.168.178.100", 90, "/bin/firmware.bin");
 	}
 	else
@@ -1139,15 +1061,6 @@ void setup()
 
 	Serial.println("Time zone: " + String(config.tz));
 	Serial.println("---------------------------------------------------");
-
-	// Webserver
-	// Route for root / web page
-
-	//server.serveStatic("/mdg-ledr.js", LittleFS, "/mdg-ledr.js", "max-age=31536000");
-	//server.serveStatic("/mdg-ledr.css", LittleFS, "mdg-ledr.css", "max-age=31536000");
-	//server.serveStatic("/mdi-font.ttf", LittleFS, "/mdi-font.ttf", "max-age=31536000");
-	//server.serveStatic("/mdi-font.woff", LittleFS, "/mdi-font.woff", "max-age=31536000");
-	//server.serveStatic("/mdi-font.woff2", LittleFS, "/mdi-font.woff2", "max-age=31536000");
 
 	// Webserver
 	// Route for root / web page
@@ -1442,6 +1355,7 @@ void setup()
 				  {
 					  inputMessage = request->getParam("backgroundcolor")->value();
 					  clockdisplays[config.activeclockdisplay].backgroundColor = hstol(inputMessage);
+					  
 				  }
 				  else if (request->hasParam("hourmarkcolor"))
 				  {
@@ -1558,20 +1472,50 @@ void setup()
 
 	MDNS.addService("http", "tcp", 80);
 
-	// Start ElegantOTA
-	//	AsyncElegantOTA.begin(&server);
-
-	// Start server
+	// Start web server
 	server.begin();
 }
 
 void loop()
 {
+
+	if (WiFi.isConnected())
+	{
+
+		if (strlen(config.mqttserver) != 0)
+		{
+			if (!mqttClient.connected())
+			{
+				long now = millis();
+
+				if (now - lastReconnectAttempt > 5000)
+				{
+					#ifdef MQTT_DEBUG
+					Serial.println("Try to reconnect MQTT");
+					#endif
+					lastReconnectAttempt = now;
+
+					// Attempt to MQTTconnect
+					if (MQTTconnect())
+					{
+						#ifdef MQTT_DEBUG
+						Serial.println("Connected to MQTT");
+						#endif
+						lastReconnectAttempt = 0;
+					}
+				}
+			}
+			else
+			{
+				// Client connected
+				mqttClient.loop();
+			}
+		}
+	}
+
 	currentMillis = millis();
 
 	events();
-
-	//AsyncElegantOTA.loop();
 
 	MDNS.update();
 
@@ -1580,14 +1524,14 @@ void loop()
 	{
 
 		currentMinute = tz.minute(); //set current minute
-		//Serial.println("Check for event.....");
+		
 		//	breakTime(tz.now(), tm);
 		for (int i = 0; i <= SCHEDULES - 1; i++)
 		{
 			if (tz.hour() == schedules[i].hour && tz.minute() == schedules[i].minute && schedules[i].active == 1)
 			{
 				config.activeclockdisplay = schedules[i].activeclockdisplay;
-				//Serial.println("Schedule active..");
+			
 			}
 		}
 	}
@@ -1693,7 +1637,7 @@ void loop()
 		//normal
 
 		leds[rotate(tz.second())] = clockdisplays[config.activeclockdisplay].secondColor;
-		//Serial.println(tz.second());
+	
 	}
 
 	if (clockdisplays[config.activeclockdisplay].showms == 1)
@@ -1758,7 +1702,8 @@ void loop()
 			lastExecutedMillis_lightsensorMQTT = currentMillis; // save the last executed time
 			snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%0.2f", lux);
 			snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_LIGHT_SENSOR_STATE_TOPIC);
-			mqttClient.publish(m_topic_buffer, 0, true, m_msg_buffer);
+
+			mqttClient.publish(m_topic_buffer, m_msg_buffer, true);
 		}
 	}
 
