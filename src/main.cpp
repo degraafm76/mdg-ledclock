@@ -142,7 +142,7 @@ const char *state_topic;
 // MQTT: topics
 
 // Ledclock all state
-const PROGMEM char *MQTT_DISPLAY_STATE_TOPIC = "/display";
+const PROGMEM char *MQTT_DISPLAY_STATE_TOPIC = "/display/state";
 const PROGMEM char *MQTT_DISPLAY_COMMAND_TOPIC = "/display/set";
 // Hour state
 const PROGMEM char *MQTT_HOUR_STATE_TOPIC = "/hour/state";
@@ -282,6 +282,7 @@ void publishState(int index, const char *TOPIC)
 
 	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, TOPIC);
 
+	Serial.println(m_topic_buffer);
 	Serial.println(mqtt_payload_buffer);
 
 	mqttClient.publish(m_topic_buffer, 0, true, mqtt_payload_buffer);
@@ -432,7 +433,6 @@ void onMqttMessage(char *p_topic, char *p_payload, AsyncMqttClientMessagePropert
 			else
 			{
 				clockdisplays[config.activeclockdisplay].brightness = map(brightness, 0, 100, 0, 255);
-
 				int NumtToBrightness = map(clockdisplays[config.activeclockdisplay].brightness, 0, 255, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
 				FastLED.setBrightness(NumtToBrightness);
 			}
