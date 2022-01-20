@@ -1,4 +1,4 @@
-/*  MDG Lightclock
+/*  MDG Ledclock
     Copyright (C) 2022  M. de Graaf
 
     This program is free software: you can redistribute it and/or modify
@@ -24,32 +24,385 @@
 #include <ESP8266mDNS.h>
 #include <FastLED.h>
 #include <PubSubClient.h>
-#include <ESPAsyncTCP.h> //	using modified library in /lib to correct SSL error when compiling with build_flags = -DASYNC_TCP_SSL_ENABLED=1  see (https://github.com/mhightower83/ESPAsyncTCP#correct-ssl-_recv) when this pull request is complete we can continue to use the original library.
+#include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
+#include <config.h>
+#include <structs.h>
 #include <web/mdg_ledr_js.h>
 #include <web/mdg_ledr_css.h>
 #include <web/index_html.h>
 #include <web/fonts.h>
 
-#define SOFTWARE_VERSION "1.2.0"			// Software version
-#define CLOCK_MODEL "MDG Ledclock model 1"	// Clock Model
-#define NUM_LEDS 60							// How many leds are in the clock?
-#define ROTATE_LEDS 30						// Rotate leds by this number. Led ring is connected upside down
-#define MAX_BRIGHTNESS 255					// Max brightness
-#define MIN_BRIGHTNESS 8					// Min brightness (at very low brightness levels interpolating doesn't work well and the led's will flicker and not display the correct color)
-#define DATA_PIN 3							// Neopixel data pin
-#define NEOPIXEL_VOLTAGE 5					// Neopixel voltage
-#define NEOPIXEL_MILLIAMPS 1000				// Neopixel maximum current usage in milliamps, if you have a powersource higher then 1A you can change this value (at your own risk!) to have brighter leds.
-#define LIGHTSENSORPIN A0					// Ambient light sensor pin
-#define EXE_INTERVAL_AUTO_BRIGHTNESS 1000	// Interval (ms) to check light sensor value
-#define EXE_INTERVAL_LIGHTSENSOR_MQTT 60000 // Interval (ms) to send light sensor value to MQTT topic
-#define CLOCK_DISPLAYS 8					// Nr of user defined clock displays
-#define SCHEDULES 12						// Nr of user defined schedules
-#define AP_NAME "MDG-Ledclock1"				// Name of the AP when WIFI is not setup or connected
-//#define MQTT_DEBUG						// MQTT debug enabled
-#define COMPILE_DATE __DATE__ " " __TIME__  // Compile date/time
+void saveConfiguration(const char *filename)
+{
+	// Delete existing file, otherwise the configuration is appended to the file
+	LittleFS.remove(filename);
+
+	// Open file for writing
+	File configfile = LittleFS.open(filename, "w");
+
+	if (!configfile)
+	{
+		//Serial.println(F("Failed to create file"));
+		return;
+	}
+
+	// Allocate a temporary JsonDocument
+	// Don't forget to change the capacity to match your requirements.
+	// Use arduinojson.org/assistant to compute the capacity.
+
+	DynamicJsonDocument doc(2048);
+
+	doc["acd"] = config.activeclockdisplay;
+	doc["tz"] = config.tz;
+	doc["ssid"] = config.ssid;
+	doc["wp"] = config.wifipassword;
+	doc["hn"] = config.hostname;
+	doc["ms"] = config.mqttserver;
+	doc["mp"] = config.mqttport;
+	doc["mu"] = config.mqttuser;
+	doc["mpw"] = config.mqttpassword;
+	doc["mt"] = config.mqtttls;
+
+	// Serialize JSON to file
+	if (serializeJson(doc, configfile) == 0)
+	{
+		//Serial.println(F("Failed to write to file"));
+	}
+
+	// Close the file
+	configfile.close();
+}
+
+//Serial
+String rxString = "";
+#define LINE_BUF_SIZE 128 //Maximum serial input string length
+#define ARG_BUF_SIZE 128  //Maximum argument input string length
+#define MAX_NUM_ARGS 8	  //Maximum arguments
+char line[LINE_BUF_SIZE];
+char args[MAX_NUM_ARGS][ARG_BUF_SIZE];
+boolean serial_input_error_flag = false;
+
+//Function declarations
+
+int cmd_mqtt();
+int cmd_wifi();
+int cmd_reboot();
+int cmd_help();
+
+//int cmd_exit();
+
+//List of functions pointers corresponding to each command
+int (*commands_func[])(){
+	//&cmd_help,
+	&cmd_mqtt,
+	&cmd_wifi,
+	&cmd_reboot,
+	&cmd_help
+
+	// &cmd_exit
+};
+
+//List of command names
+const char *commands_str[] = {
+	"mqtt",
+	"wifi",
+	"reboot",
+	"help"};
+
+int num_commands = sizeof(commands_str) / sizeof(char *);
+
+//List of MQTT sub command names
+const char *mqtt_args[] = {
+	"server",
+	"port",
+	"tls",
+	"user",
+	"password",
+	"settings"};
+
+int num_mqtt_args = sizeof(mqtt_args) / sizeof(char *);
+
+//List of WIFI sub command names
+const char *wifi_args[] = {
+	"ssid",
+	"password",
+	"settings"};
+int num_wifi_args = sizeof(wifi_args) / sizeof(char *);
+
+int cmd_reboot()
+{
+	delay(500);
+	ESP.restart();
+	return 1;
+}
+
+int cmd_mqtt()
+{
+	if (strcmp(args[1], mqtt_args[0]) == 0)
+	{
+		Serial.print("Mqtt server: ");
+		if (strlen(args[2]) == 0)
+		{ // show current value
+
+			Serial.print(config.mqttserver);
+		}
+		else
+		{ // set value
+			strcpy(config.mqttserver, args[2]);
+			Serial.print(config.mqttserver);
+			saveConfiguration(JSON_CONFIG_FILE);
+		}
+	}
+	else if (strcmp(args[1], mqtt_args[1]) == 0)
+	{
+		Serial.print("Mqtt port: ");
+		if (strlen(args[2]) == 0)
+		{ // show current value
+			Serial.print(config.mqttport);
+		}
+		else
+		{						   // set value
+			if (atoi(args[2]) > 0) //check if port number is numeric
+			{
+
+				config.mqttport = atoi(args[2]);
+				Serial.print(config.mqttport);
+				saveConfiguration(JSON_CONFIG_FILE);
+			}
+			else
+			{
+				Serial.print("Invalid port number");
+			}
+		}
+	}
+	else if (strcmp(args[1], mqtt_args[2]) == 0)
+	{
+		Serial.print("Mqtt tls: ");
+		if (strlen(args[2]) == 0)
+		{ // show current value
+			Serial.print(config.mqtttls);
+		}
+		else
+		{ // set value
+			//check if input is integer
+			if(atoi(args[2]) > 0){
+			config.mqtttls = atoi(args[2]);
+			Serial.print(config.mqtttls);
+			} else {
+				Serial.print("Only values \"1\" for enabled and \"0\" for disabled are allowed");
+			}
+		}
+	}
+	else if (strcmp(args[1], mqtt_args[3]) == 0)
+	{
+		Serial.print("Mqtt user: ");
+		if (strlen(args[2]) == 0)
+		{ // show current value
+			Serial.print(config.mqttuser);
+		}
+		else
+		{ // set value
+			strcpy(config.mqttuser, args[2]);
+			Serial.print(config.mqttuser);
+			saveConfiguration(JSON_CONFIG_FILE);
+		}
+	}
+	else if (strcmp(args[1], mqtt_args[4]) == 0)
+	{
+		Serial.print("Mqtt password: ");
+		if (strlen(args[2]) == 0)
+		{ // show current value
+			Serial.print("********");
+		}
+		else
+		{ // set value
+			strcpy(config.mqttpassword, args[2]);
+			Serial.print(config.mqttpassword);
+			saveConfiguration(JSON_CONFIG_FILE);
+		}
+	}
+	else if (strcmp(args[1], mqtt_args[5]) == 0)
+	{
+		Serial.println("-------- Mqtt settings --------");
+		Serial.print("Server: ");
+		Serial.println(config.mqttserver);
+		Serial.print("Port: ");
+		Serial.println(config.mqttport);
+		Serial.print("TLS: ");
+		Serial.println(config.mqtttls);
+		Serial.print("Username: ");
+		Serial.println(config.mqttuser);
+		Serial.print("Password: ");
+		Serial.println("********");
+		Serial.print("-------------------------------");
+	}
+	else
+	{
+		Serial.println("Invalid command. Type \"help mqtt\" to see how to use the mqtt command.");
+		Serial.println();
+
+		return 0;
+	}
+	Serial.println();
+
+	return 1;
+}
+
+int cmd_wifi()
+{
+	if (strcmp(args[1], wifi_args[0]) == 0)
+	{
+		Serial.print("WiFi ssid: ");
+		if (strlen(args[2]) == 0)
+		{ // show current value
+
+			Serial.print(config.ssid);
+		}
+		else
+		{ // set value
+
+			strcpy(config.ssid, args[2]);
+
+			for (int i = 3; i < MAX_NUM_ARGS; i++)
+			{
+				if (strlen(args[i]) != 0) //when there are spaces in ssid
+				{
+					strcat(config.ssid, " ");
+					strcat(config.ssid, args[i]);
+				}
+			}
+
+			Serial.print(config.ssid);
+			saveConfiguration(JSON_CONFIG_FILE);
+		}
+	}
+	else if (strcmp(args[1], wifi_args[1]) == 0)
+	{
+		Serial.print("WiFi password: ");
+		if (strlen(args[2]) == 0)
+		{ // show current value
+
+			Serial.print("********");
+		}
+		else
+		{ // set value
+			strcpy(config.wifipassword, args[2]);
+			Serial.print("********");
+			saveConfiguration(JSON_CONFIG_FILE);
+		}
+	}
+	else if (strcmp(args[1], wifi_args[2]) == 0)
+	{
+		Serial.println("-------- WiFi settings --------");
+		Serial.print("SSID: ");
+		Serial.println(config.ssid);
+		Serial.print("Password: ");
+		Serial.println("********");
+		Serial.print("-------------------------------");
+	}
+	else
+	{
+		Serial.println("Invalid command. Type \"help mqtt\" to see how to use the mqtt command.");
+		Serial.println();
+
+		return 0;
+	}
+	Serial.println();
+
+	return 1;
+}
+
+void help_help()
+{
+	Serial.println("The following commands are available:");
+
+	for (int i = 0; i < num_commands; i++)
+	{
+		Serial.print("  ");
+		Serial.println(commands_str[i]);
+	}
+	Serial.println("");
+	Serial.println("You can for example type \"help mqtt\" for more info on the mqtt command.");
+}
+
+void help_reboot()
+{
+	Serial.println("This will restart the program.");
+}
+
+void help_mqtt()
+{
+	Serial.println("The following mqtt arguments are available:");
+
+	for (int i = 0; i < num_mqtt_args; i++)
+	{
+		Serial.print("  ");
+		Serial.println(mqtt_args[i]);
+	}
+
+	Serial.println();
+	Serial.println("You can for example type \"mqtt server 192.168.1.100\" to set the mqtt server.");
+	Serial.print("If you leave the third argument empty for example \"mqtt server\" you get the current value, ");
+	Serial.println("\"mqtt settings\" shows all mqtt settings");
+}
+
+void help_wifi()
+{
+	Serial.println("The following WiFi arguments are available:");
+
+	for (int i = 0; i < num_wifi_args; i++)
+	{
+		Serial.print("  ");
+		Serial.println(wifi_args[i]);
+	}
+
+	Serial.println();
+	Serial.println("You can for example type \"wifi ssid yourwifissid\" to set the WiFi ssid.");
+	Serial.print("If you leave the third argument empty for example \"wifi ssid\" you get the current value, ");
+	Serial.println("\"wifi settings\" shows all wifi settings");
+}
+
+int cmd_help()
+{
+	if (args[1] == NULL)
+	{
+		help_help();
+	}
+	else if (strcmp(args[1], commands_str[0]) == 0)
+	{
+		help_mqtt();
+	}
+	else if (strcmp(args[1], commands_str[1]) == 0)
+	{
+		help_wifi();
+	}
+	else if (strcmp(args[1], commands_str[2]) == 0)
+	{
+		help_reboot();
+	}
+	else
+	{
+		help_help();
+	}
+	return 1;
+}
+
+int execute()
+{
+	for (int i = 0; i < num_commands; i++)
+	{
+		if (strcmp(args[0], commands_str[i]) == 0)
+		{
+			return (*commands_func[i])();
+		}
+	}
+
+	Serial.println("Invalid command. Type \"help\" for more.");
+	return 0;
+}
 
 //MQTT
 long lastReconnectAttempt = 0;
@@ -70,6 +423,7 @@ boolean wifiConnected = false; // Variable to store wifi connected state
 unsigned char bssid[6];
 byte channel;
 int rssi = -999;
+String apPassword;
 
 //Lightsensor
 unsigned long lastExecutedMillis_brightness = 0;	  // Variable to save the last executed time
@@ -81,7 +435,7 @@ float lux;											  //LUX
 // more the readings will be smoothed, but the slower the output will respond to
 // the input. Using a constant rather than a normal variable lets us use this
 // value to determine the size of the readings array.
-const int numReadings = 20;
+const int numReadings = 100;
 
 int readings[numReadings]; // the readings from the analog input
 int readIndex = 0;		   // the index of the current reading
@@ -155,7 +509,7 @@ const PROGMEM char *MQTT_BACKGROUND_COMMAND_TOPIC = "/background/set";
 const PROGMEM char *MQTT_HOURMARKS_STATE_TOPIC = "/hourmarks/state";
 const PROGMEM char *MQTT_HOURMARKS_COMMAND_TOPIC = "/hourmarks/set";
 //Light sensor
-const PROGMEM char *MQTT_LIGHT_SENSOR_STATE_TOPIC = "/sensor/lux/status";
+const PROGMEM char *MQTT_LIGHT_SENSOR_STATE_TOPIC = "/sensor";
 
 // payloads by default (on/off)
 const PROGMEM char *LIGHT_ON = "ON";
@@ -166,51 +520,8 @@ String jsonConfigfile;
 String jsonSchedulefile;
 String jsonClkdisplaysfile;
 
-struct Config
-{
-	byte activeclockdisplay;
-	char tz[64];
-	char ssid[33];
-	char wifipassword[65];
-	char hostname[17];
-	char mqttserver[64];
-	int mqttport;
-	char mqttuser[32];
-	char mqttpassword[32];
-	byte mqtttls;
-};
-
-typedef struct Clockdisplay
-{
-	int hourColor;
-	int minuteColor;
-	int secondColor;
-	int backgroundColor;
-	int hourMarkColor;
-	byte showms;
-	byte showseconds;
-	byte autobrightness;
-	int brightness;
-	byte backgroud_effect;
-} clockdisplay;
-
-typedef struct Schedule
-{
-	int hour;
-	int minute;
-	byte activeclockdisplay;
-	byte active;
-
-} schedule;
-
-schedule schedules[SCHEDULES];
-
 int scheduleId = 0;
 int currentMinute;
-
-clockdisplay clockdisplays[CLOCK_DISPLAYS]; //Array of clock displays
-
-Config config; // <- global configuration object
 
 tmElements_t tm;
 
@@ -251,10 +562,24 @@ void setColor(uint8_t p_red, uint8_t p_green, uint8_t p_blue, int p_index)
 	}
 }
 
+void publishSensorState()
+{
+
+	DynamicJsonDocument mqtt_payload(32);
+
+	mqtt_payload["lux"] = round(lux);
+
+	char mqtt_payload_buffer[measureJson(mqtt_payload) + 1];
+	serializeJson(mqtt_payload, mqtt_payload_buffer, sizeof(mqtt_payload_buffer));
+
+	snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_LIGHT_SENSOR_STATE_TOPIC);
+	mqttClient.publish(m_topic_buffer, mqtt_payload_buffer, true);
+}
+
 void publishState(int index, const char *TOPIC)
 {
 
-	DynamicJsonDocument mqtt_payload(256);
+	DynamicJsonDocument mqtt_payload(384);
 	if (!(String(MQTT_DISPLAY_STATE_TOPIC)).equals(TOPIC) && index > -1)
 	{
 		mqtt_payload["state"] = array_state[index] ? LIGHT_ON : LIGHT_OFF;
@@ -270,6 +595,14 @@ void publishState(int index, const char *TOPIC)
 	{
 		mqtt_payload["state"] = display_state ? LIGHT_ON : LIGHT_OFF;
 		mqtt_payload["brightness"] = map(clockdisplays[config.activeclockdisplay].brightness, 0, 255, 0, 100);
+		if (clockdisplays[config.activeclockdisplay].autobrightness == 1)
+		{
+			mqtt_payload["effect"] = "auto_brightness";
+		}
+		else
+		{
+			mqtt_payload["effect"] = "manual_brightness";
+		}
 	}
 
 	char mqtt_payload_buffer[measureJson(mqtt_payload) + 1];
@@ -325,7 +658,7 @@ void callback(char *p_topic, byte *p_payload, unsigned int p_length)
 		payload.concat((char)p_payload[i]);
 	}
 
-	DynamicJsonDocument mqttbuffer(128);
+	DynamicJsonDocument mqttbuffer(256);
 
 	// Deserialize the JSON document
 	DeserializationError error_config = deserializeJson(mqttbuffer, payload);
@@ -369,6 +702,18 @@ void callback(char *p_topic, byte *p_payload, unsigned int p_length)
 				clockdisplays[config.activeclockdisplay].brightness = map(brightness, 0, 100, 0, 255);
 				int NumtToBrightness = map(clockdisplays[config.activeclockdisplay].brightness, 0, 255, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
 				FastLED.setBrightness(NumtToBrightness);
+			}
+		}
+		if (mqttbuffer.containsKey("effect"))
+		{
+
+			if (strcmp(mqttbuffer["effect"], "auto_brightness") == 0)
+			{
+				clockdisplays[config.activeclockdisplay].autobrightness = 1;
+			}
+			else if (strcmp(mqttbuffer["effect"], "manual_brightness") == 0)
+			{
+				clockdisplays[config.activeclockdisplay].autobrightness = 0;
 			}
 		}
 		publishState(-1, MQTT_DISPLAY_STATE_TOPIC); //publish MQTT state topic
@@ -430,6 +775,43 @@ void callback(char *p_topic, byte *p_payload, unsigned int p_length)
 				}
 			}
 		}
+		if ((String(config.hostname) + String(MQTT_BACKGROUND_COMMAND_TOPIC)).equals(p_topic))
+		{
+			if (mqttbuffer.containsKey("effect"))
+			{
+				Serial.println("effect bg topic trigger");
+				if (strcmp(mqttbuffer["effect"], "rgb") == 0)
+				{
+					Serial.println("effect");
+					clockdisplays[config.activeclockdisplay].backgroud_effect = 0;
+				}
+				else if (strcmp(mqttbuffer["effect"], "rainbow") == 0)
+				{
+					Serial.println("effect");
+					clockdisplays[config.activeclockdisplay].backgroud_effect = 1;
+				}
+				else if (strcmp(mqttbuffer["effect"], "rainbow2") == 0)
+				{
+					Serial.println("effect");
+					clockdisplays[config.activeclockdisplay].backgroud_effect = 2;
+				}
+				else if (strcmp(mqttbuffer["effect"], "juggle") == 0)
+				{
+					Serial.println("effect");
+					clockdisplays[config.activeclockdisplay].backgroud_effect = 3;
+				}
+				else if (strcmp(mqttbuffer["effect"], "sinelon") == 0)
+				{
+					Serial.println("effect");
+					clockdisplays[config.activeclockdisplay].backgroud_effect = 4;
+				}
+				else if (strcmp(mqttbuffer["effect"], "bpm") == 0)
+				{
+					Serial.println("effect");
+					clockdisplays[config.activeclockdisplay].backgroud_effect = 5;
+				}
+			}
+		}
 		if (mqttbuffer.containsKey("brightness"))
 		{
 			uint8_t brightness = uint8_t(mqttbuffer["brightness"]);
@@ -478,6 +860,7 @@ void callback(char *p_topic, byte *p_payload, unsigned int p_length)
 			}
 			setColor(rgb_red, rgb_green, rgb_blue, array_index);
 		}
+
 		publishState(array_index, state_topic); //publish MQTT state topic
 	}
 }
@@ -626,47 +1009,6 @@ void saveSchedules(const char *filename)
 	schedulefile.close();
 }
 
-void saveConfiguration(const char *filename)
-{
-	// Delete existing file, otherwise the configuration is appended to the file
-	LittleFS.remove(filename);
-
-	// Open file for writing
-	File configfile = LittleFS.open(filename, "w");
-
-	if (!configfile)
-	{
-		//Serial.println(F("Failed to create file"));
-		return;
-	}
-
-	// Allocate a temporary JsonDocument
-	// Don't forget to change the capacity to match your requirements.
-	// Use arduinojson.org/assistant to compute the capacity.
-
-	DynamicJsonDocument doc(2048);
-
-	doc["acd"] = config.activeclockdisplay;
-	doc["tz"] = config.tz;
-	doc["ssid"] = config.ssid;
-	doc["wp"] = config.wifipassword;
-	doc["hn"] = config.hostname;
-	doc["ms"] = config.mqttserver;
-	doc["mp"] = config.mqttport;
-	doc["mu"] = config.mqttuser;
-	doc["mpw"] = config.mqttpassword;
-	doc["mt"] = config.mqtttls;
-
-	// Serialize JSON to file
-	if (serializeJson(doc, configfile) == 0)
-	{
-		//Serial.println(F("Failed to write to file"));
-	}
-
-	// Close the file
-	configfile.close();
-}
-
 void saveClockDisplays(const char *filename)
 {
 	// Delete existing file, otherwise the configuration is appended to the file
@@ -754,7 +1096,7 @@ void scanWifi(String ssid)
 boolean checkConnection()
 {
 	int count = 0;
-	Serial.print("Waiting for Wi-Fi connection");
+	Serial.print("Info: Waiting for Wi-Fi connection");
 	while (count < 30)
 	{
 		leds[rotate(count)] = CRGB::White;
@@ -763,7 +1105,7 @@ boolean checkConnection()
 		if (WiFi.status() == WL_CONNECTED)
 		{
 			Serial.println();
-			Serial.println("Connected!");
+			Serial.println("Info: Connected!");
 			leds[rotate(count)] = CRGB::Green;
 			FastLED.show();
 			return (true);
@@ -772,7 +1114,7 @@ boolean checkConnection()
 		Serial.print(".");
 		count++;
 	}
-	Serial.println("Timed out.");
+	Serial.println("Info: Timed out.");
 	leds[rotate(count)] = CRGB::Red;
 	FastLED.show();
 	delay(5000);
@@ -787,13 +1129,6 @@ void addGlitter(fract8 chanceOfGlitter)
 	{
 		leds[random16(NUM_LEDS)] += CRGB::White;
 	}
-}
-void confetti()
-{
-	// random colored speckles that blink in and fade smoothly
-	fadeToBlackBy(leds, NUM_LEDS, 10);
-	int pos = random16(NUM_LEDS);
-	leds[pos] += CHSV(gHue + random8(64), 200, 255);
 }
 
 void juggle()
@@ -811,11 +1146,11 @@ void juggle()
 void bpm()
 {
 	// colored stripes pulsing at a defined Beats-Per-Minute (BPM)
-	uint8_t BeatsPerMinute = 62;
+	uint8_t BeatsPerMinute = 60;
 	CRGBPalette16 palette = PartyColors_p;
-	uint8_t beat = beatsin8(BeatsPerMinute, 64, 255);
+	uint8_t beat = beatsin8(BeatsPerMinute, 60, 255);
 	for (int i = 0; i < NUM_LEDS; i++)
-	{ //9948
+	{
 		leds[i] = ColorFromPalette(palette, gHue + (i * 2), beat - gHue + (i * 10));
 	}
 }
@@ -831,7 +1166,8 @@ void sinelon()
 void rainbow()
 {
 	// FastLED's built-in rainbow generator
-	fill_rainbow(leds, NUM_LEDS, gHue, 7);
+	//fill_rainbow(leds, NUM_LEDS, gHue, 7);
+	fill_rainbow(leds, NUM_LEDS, gHue, 255 / NUM_LEDS);
 }
 
 void rainbowWithGlitter()
@@ -841,12 +1177,111 @@ void rainbowWithGlitter()
 	addGlitter(80);
 }
 
+void printInfo()
+{
+	Serial.println();
+	Serial.println("----------------- [Information] ------------------");
+	Serial.print("Clock Model: ");
+	Serial.println(CLOCK_MODEL);
+	Serial.print("Software version: ");
+	Serial.println(SOFTWARE_VERSION);
+	Serial.print("MAC address: ");
+	Serial.println(WiFi.macAddress());
+	Serial.println("AP Password: " + apPassword);
+	Serial.println("Hostname: " + String(config.hostname));
+	Serial.println("SSID: " + WiFi.SSID());
+	Serial.println("rssi: " + String(WiFi.RSSI()));
+	Serial.println("Channel: " + String(channel));
+	Serial.println("IP Address: " + WiFi.localIP().toString());
+	Serial.println("MQTT Server: " + String(config.mqttserver));
+	Serial.println("MQTT Port: " + String(config.mqttport));
+	Serial.println("MQTT Connected: " + String(MQTTConnected));
+	Serial.println("MQTT TLS: " + String(config.mqtttls));
+	Serial.println("Time zone: " + String(config.tz));
+	Serial.println("---------------------------------------------------");
+}
+
+void handleSerial()
+{
+	while (Serial.available())
+	{
+
+		//see https://www.norwegiancreations.com/2018/02/creating-a-command-line-interface-in-arduinos-serial-monitor/
+
+		// get the new byte:
+		char inChar = (char)Serial.read();
+		// add it to the rxString:
+		rxString += inChar;
+		// if the incoming character is a line feed, command is complete
+		if (inChar == '\r')
+		{
+
+			Serial.println();
+			rxString.trim(); //remove CRLF from received string
+
+			char *argument;
+			int counter = 0;
+			rxString.toCharArray(line, LINE_BUF_SIZE);
+
+			argument = strtok(line, " ");
+
+			while ((argument != NULL))
+			{
+				if (counter < MAX_NUM_ARGS)
+				{
+					if (strlen(argument) < ARG_BUF_SIZE)
+					{
+						strcpy(args[counter], argument);
+						argument = strtok(NULL, " ");
+						counter++;
+					}
+					else
+					{
+						Serial.println("Error: Input string is too long.");
+						serial_input_error_flag = true; // set error flag to true
+						break;
+					}
+				}
+				else
+				{
+					Serial.println("Error: To much arguments");
+					serial_input_error_flag = true; // set error flag to true
+					break;
+				}
+			}
+
+			if (!serial_input_error_flag) //only proceed when error flag is false
+			{
+
+				/* Serial.println(args[0]); //print argument 1
+				Serial.println(args[1]); //print argument 2
+				Serial.println(args[2]); //print argument 3 */
+
+				execute();
+			}
+			else
+			{
+				serial_input_error_flag = false; //reset error flag
+			}
+
+			rxString = "";
+
+			//reset the line string and the args list to zero.
+			memset(line, 0, LINE_BUF_SIZE);
+			memset(args, 0, sizeof(args[0][0]) * MAX_NUM_ARGS * ARG_BUF_SIZE);
+
+			Serial.print(">"); //command prompt
+		}
+	}
+}
+
 void setup()
 {
 
 	delay(2000); // sanity check delay - allows reprogramming if accidently blowing power w/leds
 
 	Serial.begin(115200);
+
 	while (!Serial)
 	{
 		;
@@ -866,7 +1301,7 @@ void setup()
 	}
 
 	///// Config file /////
-	File configfile = LittleFS.open("/config.json", "r");
+	File configfile = LittleFS.open(JSON_CONFIG_FILE, "r");
 	if (!configfile)
 	{
 		//Serial.println("Config file open failed");
@@ -886,7 +1321,7 @@ void setup()
 		configfile.close(); //close file
 
 	///// Schedule file /////
-	File schedulefile = LittleFS.open("/schedules.json", "r");
+	File schedulefile = LittleFS.open(JSON_SCHEDULES_FILE, "r");
 	if (!schedulefile)
 	{
 		//Serial.println("Schedule file open failed");
@@ -915,7 +1350,7 @@ void setup()
 	}
 
 	////// Config file //////
-	File clkdisplaysfile = LittleFS.open("/clkdisplays.json", "r");
+	File clkdisplaysfile = LittleFS.open(JSON_CLOCK_DISPLAYS_FILE, "r");
 
 	if (!clkdisplaysfile)
 	{
@@ -1024,43 +1459,19 @@ void setup()
 
 	WiFi.macAddress(mac);
 
-	Serial.println("----------------- [Information] ------------------");
-	Serial.print("Clock Model: ");
-	Serial.println(CLOCK_MODEL);
-	Serial.print("Software version: ");
-	Serial.println(SOFTWARE_VERSION);
-	Serial.print("MAC address: ");
-	Serial.println(WiFi.macAddress());
-	String apPassword = String(mac[5], HEX) + String(mac[4], HEX) + String(mac[3], HEX) + String(mac[2] + mac[5], HEX);
-	Serial.println("AP Password: " + apPassword);
-	Serial.println("Hostname: " + String(config.hostname));
-	Serial.println("SSID: " + WiFi.SSID());
-	Serial.println("rssi: " + String(WiFi.RSSI()));
-	Serial.println("Channel: " + String(channel));
-	Serial.println("IP Address: " + WiFi.localIP().toString());
-	Serial.println("MQTT Server: " + String(config.mqttserver));
-	Serial.println("MQTT Port: " + String(config.mqttport));
-	Serial.println("MQTT Connected: " + String(MQTTConnected));
-	Serial.println("MQTT TLS: " + String(config.mqtttls));
+	apPassword = String(mac[5], HEX) + String(mac[4], HEX) + String(mac[3], HEX) + String(mac[2] + mac[5], HEX);
 
 	if (wifiConnected == false)
 	{
+
 		WiFi.mode(WIFI_AP); //Accespoint mode
 		WiFi.softAP(AP_NAME, apPassword);
-	}
-
-	if (!MDNS.begin(config.hostname))
-	{ // Start the mDNS responder for esp8266.local
-		Serial.println("Error setting up MDNS responder!");
 	}
 
 	// Provide official timezone names
 	// https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 	if (!tz.setCache(0))
 		tz.setLocation(config.tz);
-
-	Serial.println("Time zone: " + String(config.tz));
-	Serial.println("---------------------------------------------------");
 
 	// Webserver
 	// Route for root / web page
@@ -1101,7 +1512,7 @@ void setup()
 	server.on("/save-config", HTTP_GET, [](AsyncWebServerRequest *request) { //save config
 		//Serial.println("save");
 
-		saveConfiguration("/config.json");
+		saveConfiguration(JSON_CONFIG_FILE);
 		request->send(200, "text/plain", "OK");
 	});
 
@@ -1186,7 +1597,7 @@ void setup()
 	});
 
 	server.on("/save-clockdisplays", HTTP_GET, [](AsyncWebServerRequest *request) { //save clockdisplays
-		saveClockDisplays("/clkdisplays.json");
+		saveClockDisplays(JSON_CLOCK_DISPLAYS_FILE);
 		request->send(200, "text/plain", "OK");
 	});
 	server.on("/get-settings", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -1323,14 +1734,13 @@ void setup()
 						  schedules[scheduleId].activeclockdisplay = p->value().toInt();
 					  }
 				  }
-				  saveSchedules("/schedules.json");
+				  saveSchedules(JSON_SCHEDULES_FILE);
 
 				  request->send(200, "text/plain", "OK");
 			  });
 	server.on("/reboot", HTTP_GET, [](AsyncWebServerRequest *request) { //reboot ESP
 		request->send(200, "text/plain", "OK");
-		delay(500);
-		ESP.restart();
+		cmd_reboot();
 	});
 	server.on("/color", HTTP_GET, [](AsyncWebServerRequest *request)
 			  {
@@ -1355,7 +1765,6 @@ void setup()
 				  {
 					  inputMessage = request->getParam("backgroundcolor")->value();
 					  clockdisplays[config.activeclockdisplay].backgroundColor = hstol(inputMessage);
-					  
 				  }
 				  else if (request->hasParam("hourmarkcolor"))
 				  {
@@ -1470,10 +1879,27 @@ void setup()
 				  request->send(200, "text/plain", "OK");
 			  });
 
-	MDNS.addService("http", "tcp", 80);
+	if (config.mqtttls == 1 && MQTTConnected)
+	{
+		//do not start webserver when MQTT is connected with TLS because of low memory and crashes
+		Serial.println("Info: Webserver is disabled because MQTT TLS is enabled");
+	}
+	else
+	{
+		// Start web server
+		server.begin();
 
-	// Start web server
-	server.begin();
+		//Multicast DNS
+		if (!MDNS.begin(config.hostname))
+		{ // Start the mDNS responder for esp8266.local
+			Serial.println("Error setting up MDNS responder!");
+		}
+
+		MDNS.addService("http", "tcp", 80);
+	}
+	//printInfo();
+	Serial.println("Type help for information");
+	Serial.print(">");
 }
 
 void loop()
@@ -1490,17 +1916,17 @@ void loop()
 
 				if (now - lastReconnectAttempt > 5000)
 				{
-					#ifdef MQTT_DEBUG
+#ifdef MQTT_DEBUG
 					Serial.println("Try to reconnect MQTT");
-					#endif
+#endif
 					lastReconnectAttempt = now;
 
 					// Attempt to MQTTconnect
 					if (MQTTconnect())
 					{
-						#ifdef MQTT_DEBUG
+#ifdef MQTT_DEBUG
 						Serial.println("Connected to MQTT");
-						#endif
+#endif
 						lastReconnectAttempt = 0;
 					}
 				}
@@ -1524,62 +1950,71 @@ void loop()
 	{
 
 		currentMinute = tz.minute(); //set current minute
-		
+
 		//	breakTime(tz.now(), tm);
 		for (int i = 0; i <= SCHEDULES - 1; i++)
 		{
 			if (tz.hour() == schedules[i].hour && tz.minute() == schedules[i].minute && schedules[i].active == 1)
 			{
 				config.activeclockdisplay = schedules[i].activeclockdisplay;
-			
 			}
 		}
 	}
 
-	if (clockdisplays[config.activeclockdisplay].backgroud_effect > 0) //show effect
+	if (array_state[4] && display_state) //if background is on
 	{
-		EVERY_N_MILLISECONDS(20) { gHue++; }
 
-		switch (clockdisplays[config.activeclockdisplay].backgroud_effect)
+		if (clockdisplays[config.activeclockdisplay].backgroud_effect > 0) //show effect
 		{
-		case 1:
-			rainbow();
-			break;
-		case 2:
-			rainbowWithGlitter();
-			break;
-		case 3:
-			juggle();
-			break;
-		case 4:
-			confetti();
-			break;
-		case 5:
-			bpm();
-			break;
-		default:
-			break;
+			EVERY_N_MILLISECONDS(20) { gHue++; }
+
+			switch (clockdisplays[config.activeclockdisplay].backgroud_effect)
+			{
+			case 1:
+				rainbow();
+				break;
+			case 2:
+				rainbowWithGlitter();
+				break;
+			case 3:
+				juggle();
+				break;
+			case 4:
+				sinelon();
+				break;
+			case 5:
+				bpm();
+				break;
+			default:
+				break;
+			}
+
+			uint8_t brightness = map(array_brightness[4], 0, 100, MAX_BRIGHTNESS, MIN_BRIGHTNESS);
+			for (int Led = 0; Led < NUM_LEDS; Led = Led + 1)
+			{
+				leds[rotate(Led)].fadeLightBy(brightness);
+			}
 		}
-	}
-	else
-	{
-		//Set background color
-
-		for (int Led = 0; Led < 60; Led = Led + 1)
+		else
 		{
-			if (array_state[4] && display_state) //if background is on
+			//Set background color
+
+			for (int Led = 0; Led < NUM_LEDS; Led = Led + 1)
 			{
 				leds[rotate(Led)] = clockdisplays[config.activeclockdisplay].backgroundColor;
 			}
-			else //if background is off
-			{
-				leds[rotate(Led)] = 0x000000;
-			}
 		}
 	}
-	if (array_state[3] & display_state)
+	else //if background is off
 	{
-		//Set hour marks
+		for (int Led = 0; Led < 60; Led = Led + 1)
+		{
+			leds[rotate(Led)] = 0x000000;
+		}
+	}
+
+	if (array_state[3] & display_state) // Hour marks
+	{
 		for (int Led = 0; Led <= 55; Led = Led + 5)
 		{
 			leds[rotate(Led)] = clockdisplays[config.activeclockdisplay].hourMarkColor;
@@ -1587,7 +2022,7 @@ void loop()
 		}
 	}
 
-	if (array_state[0] && display_state)
+	if (array_state[0] && display_state) //Hour hand
 	{
 		//Hour hand
 		int houroffset = map(tz.minute(), 0, 60, 0, 5); //move the hour hand when the minutes pass
@@ -1607,9 +2042,8 @@ void loop()
 	} */
 	}
 
-	if (array_state[1] && display_state)
+	if (array_state[1] && display_state) //Minute Hand
 	{
-		//Minute hand
 		leds[rotate(tz.minute())] = clockdisplays[config.activeclockdisplay].minuteColor;
 	}
 
@@ -1637,7 +2071,6 @@ void loop()
 		//normal
 
 		leds[rotate(tz.second())] = clockdisplays[config.activeclockdisplay].secondColor;
-	
 	}
 
 	if (clockdisplays[config.activeclockdisplay].showms == 1)
@@ -1662,6 +2095,8 @@ void loop()
 			// read from the sensor:
 			readings[readIndex] = analogRead(LIGHTSENSORPIN);
 
+			//Serial.println(readings[readIndex]);
+
 			// add the reading to the total:
 			total = total + readings[readIndex];
 			// advance to the next position in the array:
@@ -1677,9 +2112,11 @@ void loop()
 			// calculate the average:
 			average = total / numReadings;
 
+			//Serial.println(average);
+
 			lux = average * 0.9765625; // 1000/1024
 
-			int brightnessMap = map(average, 3, 45, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
+			int brightnessMap = map(average, 3, 64, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
 
 			brightnessMap = constrain(brightnessMap, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
 
@@ -1700,13 +2137,13 @@ void loop()
 		if (currentMillis - lastExecutedMillis_lightsensorMQTT >= EXE_INTERVAL_LIGHTSENSOR_MQTT)
 		{
 			lastExecutedMillis_lightsensorMQTT = currentMillis; // save the last executed time
-			snprintf(m_msg_buffer, MSG_BUFFER_SIZE, "%0.2f", lux);
-			snprintf(m_topic_buffer, sizeof(m_topic_buffer), "%s%s", config.hostname, MQTT_LIGHT_SENSOR_STATE_TOPIC);
 
-			mqttClient.publish(m_topic_buffer, m_msg_buffer, true);
+			publishSensorState();
 		}
 	}
 
 	//FastLED.show();
 	FastLED.delay(1000 / 400);
+
+	handleSerial();
 }
