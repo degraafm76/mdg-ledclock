@@ -567,7 +567,7 @@ int execute()
 	}
 
 	if (strcmp(args[0], "") == 0)
-	{	//user just pressed enter
+	{ //user just pressed enter
 		//do nothing
 		return 1;
 	}
@@ -931,37 +931,18 @@ void callback(char *p_topic, byte *p_payload, unsigned int p_length)
 		{
 			if (mqttbuffer.containsKey("effect"))
 			{
-				Serial.println("effect bg topic trigger");
 				if (strcmp(mqttbuffer["effect"], "rgb") == 0)
-				{
-					Serial.println("effect");
 					clockdisplays[config.activeclockdisplay].backgroud_effect = 0;
-				}
 				else if (strcmp(mqttbuffer["effect"], "rainbow") == 0)
-				{
-					Serial.println("effect");
 					clockdisplays[config.activeclockdisplay].backgroud_effect = 1;
-				}
 				else if (strcmp(mqttbuffer["effect"], "rainbow2") == 0)
-				{
-					Serial.println("effect");
 					clockdisplays[config.activeclockdisplay].backgroud_effect = 2;
-				}
 				else if (strcmp(mqttbuffer["effect"], "juggle") == 0)
-				{
-					Serial.println("effect");
 					clockdisplays[config.activeclockdisplay].backgroud_effect = 3;
-				}
 				else if (strcmp(mqttbuffer["effect"], "sinelon") == 0)
-				{
-					Serial.println("effect");
 					clockdisplays[config.activeclockdisplay].backgroud_effect = 4;
-				}
 				else if (strcmp(mqttbuffer["effect"], "bpm") == 0)
-				{
-					Serial.println("effect");
 					clockdisplays[config.activeclockdisplay].backgroud_effect = 5;
-				}
 			}
 		}
 		if (mqttbuffer.containsKey("brightness"))
@@ -2245,7 +2226,7 @@ void loop()
 
 			lux = average * 0.9765625; // 1000/1024
 
-			int brightnessMap = map(average, 3, 64, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
+			int brightnessMap = map(average, 3, 40, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
 
 			brightnessMap = constrain(brightnessMap, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
 
