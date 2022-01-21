@@ -35,6 +35,29 @@
 #include <web/index_html.h>
 #include <web/fonts.h>
 
+//MQTT
+long lastReconnectAttempt = 0;
+boolean MQTTConnected = false; // Variable to store MQTT connected state
+BearSSL::WiFiClientSecure TLSClient;
+WiFiClient espClient;
+PubSubClient mqttClient; //uninitialised pubsub client instance. The client is initialised as TLS or espClient in setup()
+
+//MQTT Payload buffer
+const uint8_t MSG_BUFFER_SIZE = 16;
+char m_msg_buffer[MSG_BUFFER_SIZE];
+//MQTT Topic buffer
+const uint8_t TOPIC_BUFFER_SIZE = 64;
+char m_topic_buffer[TOPIC_BUFFER_SIZE];
+
+//WiFi
+boolean wifiConnected = false; // Variable to store wifi connected state
+unsigned char bssid[6];
+byte channel;
+int rssi = -999;
+String apPassword;
+
+Timezone tz;
+
 void saveConfiguration(const char *filename)
 {
 	// Delete existing file, otherwise the configuration is appended to the file
@@ -84,15 +107,17 @@ String rxString = "";
 char line[LINE_BUF_SIZE];
 char args[MAX_NUM_ARGS][ARG_BUF_SIZE];
 boolean serial_input_error_flag = false;
+boolean reset_flag = false;
 
 //Function declarations
-
 int cmd_mqtt();
 int cmd_wifi();
 int cmd_reboot();
 int cmd_help();
-
-//int cmd_exit();
+int cmd_information();
+int cmd_reset();
+int cmd_timezone();
+int cmd_hostname();
 
 //List of functions pointers corresponding to each command
 int (*commands_func[])(){
@@ -100,17 +125,22 @@ int (*commands_func[])(){
 	&cmd_mqtt,
 	&cmd_wifi,
 	&cmd_reboot,
-	&cmd_help
-
-	// &cmd_exit
-};
+	&cmd_help,
+	&cmd_information,
+	&cmd_reset,
+	&cmd_timezone,
+	&cmd_hostname};
 
 //List of command names
 const char *commands_str[] = {
 	"mqtt",
 	"wifi",
 	"reboot",
-	"help"};
+	"help",
+	"information",
+	"reset",
+	"timezone",
+	"hostname"};
 
 int num_commands = sizeof(commands_str) / sizeof(char *);
 
@@ -132,10 +162,106 @@ const char *wifi_args[] = {
 	"settings"};
 int num_wifi_args = sizeof(wifi_args) / sizeof(char *);
 
+void printInfo()
+{
+	Serial.println();
+	Serial.println("----------------- [Information] ------------------");
+	Serial.print("Clock Model: ");
+	Serial.println(CLOCK_MODEL);
+	Serial.print("Software version: ");
+	Serial.println(SOFTWARE_VERSION);
+	Serial.print("MAC address: ");
+	Serial.println(WiFi.macAddress());
+	Serial.println("AP Password: " + apPassword);
+	Serial.print("Hostname: ");
+	Serial.println(config.hostname);
+	Serial.println("SSID: " + WiFi.SSID());
+	Serial.print("Rssi: ");
+	Serial.println(WiFi.RSSI());
+	Serial.print("Channel: ");
+	Serial.println(channel);
+	Serial.println("IP Address: " + WiFi.localIP().toString());
+	Serial.print("MQTT Server: ");
+	Serial.println(config.mqttserver);
+	Serial.print("MQTT Port: ");
+	Serial.println(config.mqttport);
+	Serial.print("MQTT Connected: ");
+	Serial.println(MQTTConnected);
+	Serial.print("MQTT TLS: ");
+	Serial.println(config.mqtttls);
+	Serial.print("Time zone: ");
+	Serial.println(config.tz);
+	Serial.print("ESP Free heap: ");
+	Serial.println(ESP.getFreeHeap());
+	Serial.print("ESP Chip id: ");
+	Serial.println(ESP.getChipId());
+	Serial.println("---------------------------------------------------");
+}
+
+int cmd_reset()
+{
+	if (reset_flag)
+	{
+		Serial.println("Reset clock to default");
+		LittleFS.remove(JSON_CONFIG_FILE);
+		LittleFS.remove(JSON_SCHEDULES_FILE);
+		LittleFS.remove(JSON_CLOCK_DISPLAYS_FILE);
+		WiFi.disconnect(true); //clear wifi settings
+		cmd_reboot();
+	}
+	else
+	{
+		Serial.println("Please type \"reset\" again if you want to reset the clock to default settings.");
+		reset_flag = true;
+	}
+	return 1;
+}
+
+int cmd_information()
+{
+	printInfo();
+	return 1;
+}
+
 int cmd_reboot()
 {
 	delay(500);
 	ESP.restart();
+	return 1;
+}
+
+int cmd_hostname()
+{
+	Serial.print("Hostname: ");
+	if (strlen(args[1]) == 0)
+	{ // show current value
+
+		Serial.println(config.hostname);
+	}
+	else
+	{ // set value
+		strcpy(config.hostname, args[1]);
+		Serial.println(config.hostname);
+		saveConfiguration(JSON_CONFIG_FILE);
+	}
+	return 1;
+}
+
+int cmd_timezone()
+{
+	Serial.print("Time zone: ");
+	if (strlen(args[1]) == 0)
+	{ // show current value
+
+		Serial.println(config.tz);
+	}
+	else
+	{ // set value
+		strcpy(config.tz, args[1]);
+		Serial.println(config.tz);
+		tz.setLocation(config.tz);
+		saveConfiguration(JSON_CONFIG_FILE);
+	}
 	return 1;
 }
 
@@ -187,11 +313,15 @@ int cmd_mqtt()
 		}
 		else
 		{ // set value
-			//check if input is integer
-			if(atoi(args[2]) > 0){
-			config.mqtttls = atoi(args[2]);
-			Serial.print(config.mqtttls);
-			} else {
+			//check if input is integer and 0 or 1
+			if (atoi(args[2]) == 0 || atoi(args[2]) == 1)
+			{
+				config.mqtttls = atoi(args[2]);
+				Serial.print(config.mqtttls);
+				saveConfiguration(JSON_CONFIG_FILE);
+			}
+			else
+			{
 				Serial.print("Only values \"1\" for enabled and \"0\" for disabled are allowed");
 			}
 		}
@@ -285,7 +415,7 @@ int cmd_wifi()
 		if (strlen(args[2]) == 0)
 		{ // show current value
 
-			Serial.print("********");
+			Serial.print(config.wifipassword);
 		}
 		else
 		{ // set value
@@ -315,6 +445,15 @@ int cmd_wifi()
 	return 1;
 }
 
+void help_reset()
+{
+	Serial.println("Reset clock to default settings");
+}
+void help_information()
+{
+	Serial.println("Display clock settings and information");
+}
+
 void help_help()
 {
 	Serial.println("The following commands are available:");
@@ -331,6 +470,17 @@ void help_help()
 void help_reboot()
 {
 	Serial.println("This will restart the program.");
+}
+
+void help_timezone()
+{
+	Serial.println("Set the timezone, please use \"Olson\" format like Europe/Amsterdam. You can find a list at: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones");
+	Serial.println("For example: \"timezone Europe/Amsterdam\". If you type \"timezone\" the current timezone is shown.");
+}
+
+void help_hostname()
+{
+	Serial.println("Set the hostname. The clock is reachable for clients that support MDNS at [hostname].local");
 }
 
 void help_mqtt()
@@ -383,6 +533,22 @@ int cmd_help()
 	{
 		help_reboot();
 	}
+	else if (strcmp(args[1], commands_str[4]) == 0)
+	{
+		help_information();
+	}
+	else if (strcmp(args[1], commands_str[5]) == 0)
+	{
+		help_reset();
+	}
+	else if (strcmp(args[1], commands_str[6]) == 0)
+	{
+		help_timezone();
+	}
+	else if (strcmp(args[1], commands_str[7]) == 0)
+	{
+		help_hostname();
+	}
 	else
 	{
 		help_help();
@@ -400,30 +566,18 @@ int execute()
 		}
 	}
 
-	Serial.println("Invalid command. Type \"help\" for more.");
-	return 0;
+	if (strcmp(args[0], "") == 0)
+	{	//user just pressed enter
+		//do nothing
+		return 1;
+	}
+	else
+	{
+		Serial.println("Invalid command. Type \"help\" for more.");
+		return 0;
+	}
+	return 1;
 }
-
-//MQTT
-long lastReconnectAttempt = 0;
-boolean MQTTConnected = false; // Variable to store MQTT connected state
-BearSSL::WiFiClientSecure TLSClient;
-WiFiClient espClient;
-PubSubClient mqttClient; //uninitialised pubsub client instance. The client is initialised as TLS or espClient in setup()
-
-//MQTT Payload buffer
-const uint8_t MSG_BUFFER_SIZE = 16;
-char m_msg_buffer[MSG_BUFFER_SIZE];
-//MQTT Topic buffer
-const uint8_t TOPIC_BUFFER_SIZE = 64;
-char m_topic_buffer[TOPIC_BUFFER_SIZE];
-
-//WiFi
-boolean wifiConnected = false; // Variable to store wifi connected state
-unsigned char bssid[6];
-byte channel;
-int rssi = -999;
-String apPassword;
 
 //Lightsensor
 unsigned long lastExecutedMillis_brightness = 0;	  // Variable to save the last executed time
@@ -523,9 +677,7 @@ String jsonClkdisplaysfile;
 int scheduleId = 0;
 int currentMinute;
 
-tmElements_t tm;
-
-Timezone tz;
+//tmElements_t tm;
 
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);
@@ -1175,30 +1327,6 @@ void rainbowWithGlitter()
 	// built-in FastLED rainbow, plus some random sparkly glitter
 	rainbow();
 	addGlitter(80);
-}
-
-void printInfo()
-{
-	Serial.println();
-	Serial.println("----------------- [Information] ------------------");
-	Serial.print("Clock Model: ");
-	Serial.println(CLOCK_MODEL);
-	Serial.print("Software version: ");
-	Serial.println(SOFTWARE_VERSION);
-	Serial.print("MAC address: ");
-	Serial.println(WiFi.macAddress());
-	Serial.println("AP Password: " + apPassword);
-	Serial.println("Hostname: " + String(config.hostname));
-	Serial.println("SSID: " + WiFi.SSID());
-	Serial.println("rssi: " + String(WiFi.RSSI()));
-	Serial.println("Channel: " + String(channel));
-	Serial.println("IP Address: " + WiFi.localIP().toString());
-	Serial.println("MQTT Server: " + String(config.mqttserver));
-	Serial.println("MQTT Port: " + String(config.mqttport));
-	Serial.println("MQTT Connected: " + String(MQTTConnected));
-	Serial.println("MQTT TLS: " + String(config.mqtttls));
-	Serial.println("Time zone: " + String(config.tz));
-	Serial.println("---------------------------------------------------");
 }
 
 void handleSerial()
@@ -1888,15 +2016,16 @@ void setup()
 	{
 		// Start web server
 		server.begin();
-
-		//Multicast DNS
-		if (!MDNS.begin(config.hostname))
-		{ // Start the mDNS responder for esp8266.local
-			Serial.println("Error setting up MDNS responder!");
-		}
-
-		MDNS.addService("http", "tcp", 80);
 	}
+
+	//Multicast DNS
+	if (!MDNS.begin(config.hostname))
+	{ // Start the mDNS responder for esp8266.local
+		Serial.println("Error setting up MDNS responder!");
+	}
+
+	MDNS.addService("http", "tcp", 80);
+
 	//printInfo();
 	Serial.println("Type help for information");
 	Serial.print(">");
