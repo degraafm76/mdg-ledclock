@@ -18,7 +18,6 @@
 #include <Arduino.h>
 #include <helperfunctions.h>
 #include <ezTime.h> // using modified library in /lib (changed host to timezoned.mdg-design.nl)
-#include <ESP8266httpUpdate.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
@@ -30,33 +29,13 @@
 #include <LittleFS.h>
 #include <config.h>
 #include <structs.h>
+#include <global_vars.h>
 #include <web/mdg_ledr_js.h>
 #include <web/mdg_ledr_css.h>
 #include <web/index_html.h>
 #include <web/fonts.h>
 
-//MQTT
-long lastReconnectAttempt = 0;
-boolean MQTTConnected = false; // Variable to store MQTT connected state
-BearSSL::WiFiClientSecure TLSClient;
-WiFiClient espClient;
-PubSubClient mqttClient; //uninitialised pubsub client instance. The client is initialised as TLS or espClient in setup()
 
-//MQTT Payload buffer
-const uint8_t MSG_BUFFER_SIZE = 16;
-char m_msg_buffer[MSG_BUFFER_SIZE];
-//MQTT Topic buffer
-const uint8_t TOPIC_BUFFER_SIZE = 64;
-char m_topic_buffer[TOPIC_BUFFER_SIZE];
-
-//WiFi
-boolean wifiConnected = false; // Variable to store wifi connected state
-unsigned char bssid[6];
-byte channel;
-int rssi = -999;
-String apPassword;
-
-Timezone tz;
 
 void saveConfiguration(const char *filename)
 {
@@ -99,15 +78,7 @@ void saveConfiguration(const char *filename)
 	configfile.close();
 }
 
-//Serial
-String rxString = "";
-#define LINE_BUF_SIZE 128 //Maximum serial input string length
-#define ARG_BUF_SIZE 128  //Maximum argument input string length
-#define MAX_NUM_ARGS 8	  //Maximum arguments
-char line[LINE_BUF_SIZE];
-char args[MAX_NUM_ARGS][ARG_BUF_SIZE];
-boolean serial_input_error_flag = false;
-boolean reset_flag = false;
+
 
 //Function declarations
 int cmd_mqtt();
@@ -676,8 +647,6 @@ String jsonClkdisplaysfile;
 
 int scheduleId = 0;
 int currentMinute;
-
-//tmElements_t tm;
 
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);

@@ -1,3 +1,7 @@
+
+#ifndef STRUCTS_H
+#define STRUCTS_H
+
 struct Config
 {
     byte activeclockdisplay;
@@ -35,8 +39,6 @@ typedef struct Schedule
 
 } schedule;
 
-Config config; // <- global configuration object
 
-clockdisplay clockdisplays[CLOCK_DISPLAYS]; //Array of clock displays
 
-schedule schedules[SCHEDULES];
+#endif
