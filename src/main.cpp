@@ -550,25 +550,7 @@ int execute()
 	return 1;
 }
 
-//Lightsensor
-unsigned long lastExecutedMillis_brightness = 0;	  // Variable to save the last executed time
-unsigned long lastExecutedMillis_lightsensorMQTT = 0; // Variable to save the last executed time
-float lightReading;									  // Variable to store the ambient light value
-float lux;											  //LUX
 
-// Define the number of samples to keep track of. The higher the number, the
-// more the readings will be smoothed, but the slower the output will respond to
-// the input. Using a constant rather than a normal variable lets us use this
-// value to determine the size of the readings array.
-const int numReadings = 100;
-
-int readings[numReadings]; // the readings from the analog input
-int readIndex = 0;		   // the index of the current reading
-int total = 0;			   // the running total
-int average = 0;		   // the average
-
-//Keep track of the total runtime in mili's
-unsigned long currentMillis;
 
 CRGB leds[NUM_LEDS]; // This is an array of leds, one item for each led in the clock
 
@@ -2182,14 +2164,14 @@ void loop()
 			readIndex = readIndex + 1;
 
 			// if we're at the end of the array...
-			if (readIndex >= numReadings)
+			if (readIndex >= NUMREADINGS)
 			{
 				// ...wrap around to the beginning:
 				readIndex = 0;
 			}
 
 			// calculate the average:
-			average = total / numReadings;
+			average = total / NUMREADINGS;
 
 			//Serial.println(average);
 
