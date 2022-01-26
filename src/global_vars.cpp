@@ -4,7 +4,10 @@ WiFiClient espClient;
 BearSSL::WiFiClientSecure TLSClient;
 PubSubClient mqttClient; //uninitialised pubsub client instance. The client is initialised as TLS or espClient in setup()
 Config config; // <- global configuration object
+
+//ezTime
 Timezone tz;
+
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);
 

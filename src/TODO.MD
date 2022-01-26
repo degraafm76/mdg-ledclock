@@ -1,6 +1,5 @@
-Background effects Mqtt mqqt status
 
-
+Background effect MQTT status
 
 
 Nice to have

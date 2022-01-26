@@ -1,12 +1,10 @@
 #include <serial.h>
 
-
-
 //Serial
 String rxString = "";
 #define LINE_BUF_SIZE 128 //Maximum serial input string length
 #define ARG_BUF_SIZE 128  //Maximum argument input string length
-#define MAX_NUM_ARGS 8    //Maximum arguments
+#define MAX_NUM_ARGS 8	  //Maximum arguments
 char line[LINE_BUF_SIZE];
 char args[MAX_NUM_ARGS][ARG_BUF_SIZE];
 boolean serial_input_error_flag = false;
@@ -58,8 +56,6 @@ int cmd_reset();
 int cmd_timezone();
 int cmd_hostname();
 
-
-
 int (*commands_func[])(){
 	//&cmd_help,
 	&cmd_mqtt,
@@ -71,8 +67,7 @@ int (*commands_func[])(){
 	&cmd_timezone,
 	&cmd_hostname};
 
-
-    //List of command names
+//List of command names
 const char *commands_str[] = {
 	"mqtt",
 	"wifi",
@@ -489,8 +484,6 @@ void handleSerial()
 	while (Serial.available())
 	{
 
-		//see https://www.norwegiancreations.com/2018/02/creating-a-command-line-interface-in-arduinos-serial-monitor/
-
 		// get the new byte:
 		char inChar = (char)Serial.read();
 		// add it to the rxString:
@@ -535,11 +528,6 @@ void handleSerial()
 
 			if (!serial_input_error_flag) //only proceed when error flag is false
 			{
-
-				/* Serial.println(args[0]); //print argument 1
-				Serial.println(args[1]); //print argument 2
-				Serial.println(args[2]); //print argument 3 */
-
 				execute();
 			}
 			else
