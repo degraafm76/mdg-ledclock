@@ -3,23 +3,41 @@
 
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
+#include <FastLED.h>
 #include <PubSubClient.h>
 #include <structs.h>
 #include <config.h>
 #include <ezTime.h>
+#include <ESPAsyncWebServer.h>
+
 
 extern WiFiClient espClient;
 extern BearSSL::WiFiClientSecure TLSClient;
 extern PubSubClient mqttClient; //uninitialised pubsub client instance. The client is initialised as TLS or espClient in setup()
 extern Config config;           // <- global configuration object
 extern Timezone tz;
+extern CRGB leds[NUM_LEDS]; // This is an array of leds, one item for each led in the clock
+
+// Create AsyncWebServer object on port 80
+extern AsyncWebServer server;
 
 extern clockdisplay clockdisplays[CLOCK_DISPLAYS]; //Array of clock displays
 extern schedule schedules[SCHEDULES];
 
+extern int sliderBrightnessValue;// Variable to store brightness slidervalue in webserver
+
+extern String jsonConfigfile;
+extern String jsonSchedulefile;
+extern String jsonClkdisplaysfile;
+
+extern int scheduleId;
+extern int currentMinute;
+
+
 extern const PROGMEM char *JSON_CONFIG_FILE;
 extern const PROGMEM char *JSON_SCHEDULES_FILE;
 extern const PROGMEM char *JSON_CLOCK_DISPLAYS_FILE;
+
 
 //MQTT
 extern long lastReconnectAttempt;
@@ -40,15 +58,7 @@ extern byte channel;
 extern int rssi;
 extern String apPassword;
 
-//Serial
-extern String rxString;
-#define LINE_BUF_SIZE 128 //Maximum serial input string length
-#define ARG_BUF_SIZE 128  //Maximum argument input string length
-#define MAX_NUM_ARGS 8    //Maximum arguments
-extern char line[LINE_BUF_SIZE];
-extern char args[MAX_NUM_ARGS][ARG_BUF_SIZE];
-extern boolean serial_input_error_flag;
-extern boolean reset_flag;
+
 
 //Lightsensor
 extern unsigned long lastExecutedMillis_brightness;      // Variable to save the last executed time

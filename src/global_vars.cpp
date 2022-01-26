@@ -5,9 +5,23 @@ BearSSL::WiFiClientSecure TLSClient;
 PubSubClient mqttClient; //uninitialised pubsub client instance. The client is initialised as TLS or espClient in setup()
 Config config; // <- global configuration object
 Timezone tz;
+// Create AsyncWebServer object on port 80
+AsyncWebServer server(80);
+
+CRGB leds[NUM_LEDS]; // This is an array of leds, one item for each led in the clock
 
 clockdisplay clockdisplays[CLOCK_DISPLAYS]; //Array of clock displays
 schedule schedules[SCHEDULES];
+
+int sliderBrightnessValue = 128; // Variable to store brightness slidervalue in webserver
+
+// Config
+String jsonConfigfile;
+String jsonSchedulefile;
+String jsonClkdisplaysfile;
+
+int scheduleId = 0;
+int currentMinute;
 
 const PROGMEM char *JSON_CONFIG_FILE = "/config.json";
 const PROGMEM char *JSON_SCHEDULES_FILE = "/schedules.json";
@@ -26,15 +40,7 @@ byte channel;
 int rssi = -999;
 String apPassword;
 
-//Serial
-String rxString = "";
-#define LINE_BUF_SIZE 128 //Maximum serial input string length
-#define ARG_BUF_SIZE 128  //Maximum argument input string length
-#define MAX_NUM_ARGS 8    //Maximum arguments
-char line[LINE_BUF_SIZE];
-char args[MAX_NUM_ARGS][ARG_BUF_SIZE];
-boolean serial_input_error_flag = false;
-boolean reset_flag = false;
+
 
 //Lightsensor
 unsigned long lastExecutedMillis_brightness = 0;	  // Variable to save the last executed time
