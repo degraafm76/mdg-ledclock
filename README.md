@@ -10,7 +10,7 @@ What are my options:
 
 
 # Electronic parts
-* NodeMCU NodeMCU ESP8266 V2
+* NodeMCU ESP8266 V2
 * TEMT6000 Ambient light sensor
 * 1000uf Condensator
 * 330ohm Resistor
