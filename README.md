@@ -17,4 +17,4 @@ Options:
 
 * NodeMCU NodeMCU ESP8266 V2
 * TEMT6000 Ambient light sensor
-* LED ring 60 (https://www.tinytronics.nl/shop/nl/verlichting/ringen-en-modules/sk6812-digitale-5050-rgb-led-ring-60-leds-wit) or (https://nl.aliexpress.com/item/1005002090813354.html?gatewayAdapt=glo2nld&spm=a2g0o.9042311.0.0.27424c4dx34xlJ)
+* SK6812 LED ring 60 (https://www.tinytronics.nl/shop/nl/verlichting/ringen-en-modules/sk6812-digitale-5050-rgb-led-ring-60-leds-wit) or (https://nl.aliexpress.com/item/1005002090813354.html?gatewayAdapt=glo2nld&spm=a2g0o.9042311.0.0.27424c4dx34xlJ)
