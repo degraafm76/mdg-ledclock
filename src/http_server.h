@@ -5,6 +5,7 @@
 #include <helperfunctions.h>
 #include <ArduinoJson.h>
 #include <filesystem.h>
+#include <mqtt.h>
 #include <serial.h>
 #include <global_vars.h>
 #include <config.h>

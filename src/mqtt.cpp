@@ -116,7 +116,7 @@ void publishState(int index, const char *TOPIC)
 {
 
 	DynamicJsonDocument mqtt_payload(384);
-	if (!(String(MQTT_DISPLAY_STATE_TOPIC)).equals(TOPIC) && index > -1)
+	if (index > -1)
 	{
 		mqtt_payload["state"] = array_state[index] ? LIGHT_ON : LIGHT_OFF;
 		mqtt_payload["brightness"] = array_brightness[index];
@@ -127,7 +127,7 @@ void publishState(int index, const char *TOPIC)
 		color["b"] = array_rgb_blue[index];
 		mqtt_payload["color_mode"] = "rgb";
 	}
-	else //only state and brightness is needed for complete display
+	else if((String(MQTT_DISPLAY_STATE_TOPIC)).equals(TOPIC))//only state and brightness is needed for complete display
 	{
 		mqtt_payload["state"] = display_state ? LIGHT_ON : LIGHT_OFF;
 		mqtt_payload["brightness"] = map(clockdisplays[config.activeclockdisplay].brightness, 0, 255, 0, 100);

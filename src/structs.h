@@ -23,8 +23,11 @@ typedef struct Clockdisplay
     int secondColor;
     int backgroundColor;
     int hourMarkColor;
-    byte showms;
     byte showseconds;
+    byte showminutes;
+    byte showhours;
+    byte showhourmarks;
+    byte showbackground;
     byte autobrightness;
     int brightness;
     byte backgroud_effect;

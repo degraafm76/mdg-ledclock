@@ -90,10 +90,18 @@
             <ons-list>
                 <ons-list-item>
                     <div class="center">
-                        Show milliseconds:
+                        Show hours:
                     </div>
                     <div class="right">
-                        <ons-switch id="showms" %showms%></ons-switch>
+                        <ons-switch id="showhours" %showhours%></ons-switch>
+                    </div>
+                </ons-list-item>
+                <ons-list-item>
+                    <div class="center">
+                        Show minutes:
+                    </div>
+                    <div class="right">
+                        <ons-switch id="showminutes" %showminutes%></ons-switch>
                     </div>
                 </ons-list-item>
                 <ons-list-item>
@@ -102,6 +110,22 @@
                     </div>
                     <div class="right">
                         <ons-switch id="showseconds" %showseconds%></ons-switch>
+                    </div>
+                </ons-list-item>
+                <ons-list-item>
+                    <div class="center">
+                        Show hourmarks:
+                    </div>
+                    <div class="right">
+                        <ons-switch id="showhourmarks" %showhourmarks%></ons-switch>
+                    </div>
+                </ons-list-item>
+                <ons-list-item>
+                    <div class="center">
+                        Show background:
+                    </div>
+                    <div class="right">
+                        <ons-switch id="showbackground" %showbackground%></ons-switch>
                     </div>
                 </ons-list-item>
                 <ons-list-item>
@@ -1124,15 +1148,53 @@
 
         });
 
-        document.getElementById("showms").addEventListener('change', function () {
+        document.getElementById("showhourmarks").addEventListener('change', function () {
 
-            if (document.getElementById("showms").checked == true) {
+            if (document.getElementById("showhourmarks").checked == true) {
                 var xhr = new XMLHttpRequest();
-                xhr.open("GET", "/configuration?showms=1", true);
+                xhr.open("GET", "/configuration?showhourmarks=1", true);
                 xhr.send();
             } else {
                 var xhr = new XMLHttpRequest();
-                xhr.open("GET", "/configuration?showms=0", true);
+                xhr.open("GET", "/configuration?showhourmarks=0", true);
+                xhr.send();
+            }
+        });
+        document.getElementById("showbackground").addEventListener('change', function () {
+
+            if (document.getElementById("showbackground").checked == true) {
+                var xhr = new XMLHttpRequest();
+                xhr.open("GET", "/configuration?showbackground=1", true);
+                xhr.send();
+            } else {
+                var xhr = new XMLHttpRequest();
+                xhr.open("GET", "/configuration?showbackground=0", true);
+                xhr.send();
+            }
+        });
+
+        document.getElementById("showhours").addEventListener('change', function () {
+
+            if (document.getElementById("showhours").checked == true) {
+                var xhr = new XMLHttpRequest();
+                xhr.open("GET", "/configuration?showhours=1", true);
+                xhr.send();
+            } else {
+                var xhr = new XMLHttpRequest();
+                xhr.open("GET", "/configuration?showhours=0", true);
+                xhr.send();
+            }
+        });
+
+        document.getElementById("showminutes").addEventListener('change', function () {
+
+            if (document.getElementById("showminutes").checked == true) {
+                var xhr = new XMLHttpRequest();
+                xhr.open("GET", "/configuration?showminutes=1", true);
+                xhr.send();
+            } else {
+                var xhr = new XMLHttpRequest();
+                xhr.open("GET", "/configuration?showminutes=0", true);
                 xhr.send();
             }
         });
@@ -1180,10 +1242,10 @@
         backgroundColorPicker.on('color:change', function (color) {
             var hex = (color.hexString.substring(1)); //strip # hash from hex code
             //console.log(color.value);
-            //var brightness = Math.round(color.hsv.v/100*100)
+            var brightness = Math.round(color.hsv.v / 100 * 100)
             //console.log(brightness);
             var xhr = new XMLHttpRequest();
-            xhr.open("GET", "/color?backgroundcolor=" + hex, true);
+            xhr.open("GET", "/color?backgroundcolor=" + hex + "&brightness=" + brightness, true);
             xhr.send();
         });
         hourMarkColorPicker = new iro.ColorPicker('#hourMarkColorPicker', {
@@ -1193,8 +1255,9 @@
         });
         hourMarkColorPicker.on('color:change', function (color) {
             var hex = (color.hexString.substring(1)); //strip # hash from hex code
+            var brightness = Math.round(color.hsv.v / 100 * 100)
             var xhr = new XMLHttpRequest();
-            xhr.open("GET", "/color?hourmarkcolor=" + hex, true);
+            xhr.open("GET", "/color?hourmarkcolor=" + hex + "&brightness=" + brightness, true);
             xhr.send();
         });
         hourColorPicker = new iro.ColorPicker('#hourColorPicker', {
@@ -1204,8 +1267,9 @@
         });
         hourColorPicker.on('color:change', function (color) {
             var hex = (color.hexString.substring(1)); //strip # hash from hex code
+            var brightness = Math.round(color.hsv.v / 100 * 100)
             var xhr = new XMLHttpRequest();
-            xhr.open("GET", "/color?hourcolor=" + hex, true);
+            xhr.open("GET", "/color?hourcolor=" + hex + "&brightness=" + brightness, true);
             xhr.send();
         });
         minuteColorPicker = new iro.ColorPicker('#minuteColorPicker', {
@@ -1215,8 +1279,9 @@
         });
         minuteColorPicker.on('color:change', function (color) {
             var hex = (color.hexString.substring(1)); //strip # hash from hex code
+            var brightness = Math.round(color.hsv.v / 100 * 100)
             var xhr = new XMLHttpRequest();
-            xhr.open("GET", "/color?minutecolor=" + hex, true);
+            xhr.open("GET", "/color?minutecolor=" + hex + "&brightness=" + brightness, true);
             xhr.send();
         });
         secondColorPicker = new iro.ColorPicker('#secondColorPicker', {
@@ -1226,8 +1291,9 @@
         });
         secondColorPicker.on('color:change', function (color) {
             var hex = (color.hexString.substring(1)); //strip # hash from hex code
+            var brightness = Math.round(color.hsv.v / 100 * 100)
             var xhr = new XMLHttpRequest();
-            xhr.open("GET", "/color?secondcolor=" + hex, true);
+            xhr.open("GET", "/color?secondcolor=" + hex + "&brightness=" + brightness, true);
             xhr.send();
         });
 

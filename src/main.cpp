@@ -15,6 +15,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+
+
 #include <Arduino.h>
 #include <helperfunctions.h>
 #include <ezTime.h> // using modified library in /lib (changed host to timezoned.mdg-design.nl)
@@ -34,6 +36,7 @@
 #include <structs.h>
 #include <global_vars.h>
 #include <serial.h>
+#include <effects.h>
 
 void scanWifi(String ssid)
 {
@@ -42,12 +45,8 @@ void scanWifi(String ssid)
 	rssi = -999;
 	for (int thisNet = 0; thisNet < numSsid; thisNet++)
 	{
-		//Serial.println(WiFi.SSID(thisNet));
 		if (WiFi.SSID(thisNet) == ssid)
-		{
-			//Serial.println("found SSID: " + WiFi.SSID(thisNet));
-			//Serial.println("rssi: " + String(WiFi.RSSI(thisNet)));
-			//Serial.println("channel: " + String(WiFi.channel(thisNet)));
+		{		
 			if (WiFi.RSSI(thisNet) > rssi)
 			{
 				memcpy(bssid, WiFi.BSSID(thisNet), 6);
@@ -86,26 +85,7 @@ boolean checkConnection()
 	return false;
 }
 
-uint8_t gHue = 0; // rotating "base color" used by many of the patterns
 
-void bpm()
-{
-	// colored stripes pulsing at a defined Beats-Per-Minute (BPM)
-	uint8_t BeatsPerMinute = 60;
-	CRGBPalette16 palette = PartyColors_p;
-	uint8_t beat = beatsin8(BeatsPerMinute, 60, 255);
-	for (int i = 0; i < NUM_LEDS; i++)
-	{
-		leds[i] = ColorFromPalette(palette, gHue + (i * 2), beat - gHue + (i * 10));
-	}
-}
-
-void rainbow()
-{
-	// FastLED's built-in rainbow generator
-	//fill_rainbow(leds, NUM_LEDS, gHue, 7);
-	fill_rainbow(leds, NUM_LEDS, gHue, 255 / NUM_LEDS);
-}
 
 void setup()
 {
@@ -205,20 +185,43 @@ void setup()
 
 	for (int i = 0; i <= CLOCK_DISPLAYS - 1; i++)
 	{
-
 		clockdisplays[i].backgroundColor = clkdisplays_doc[i]["bgc"] | 0x002622;
 		clockdisplays[i].hourMarkColor = clkdisplays_doc[i]["hmc"] | 0xb81f00;
 		clockdisplays[i].hourColor = clkdisplays_doc[i]["hc"] | 0xffe3e9;
 		clockdisplays[i].minuteColor = clkdisplays_doc[i]["mc"] | 0xffe3e9;
 		clockdisplays[i].secondColor = clkdisplays_doc[i]["sc"] | 0xffe3e9;
-		clockdisplays[i].showms = clkdisplays_doc[i]["ms"] | 0;
 		clockdisplays[i].showseconds = clkdisplays_doc[i]["s"] | 1;
+		clockdisplays[i].showminutes = clkdisplays_doc[i]["m"] | 1;
+		clockdisplays[i].showhours = clkdisplays_doc[i]["h"] | 1;
+		clockdisplays[i].showhourmarks = clkdisplays_doc[i]["hm"] | 1;
+		clockdisplays[i].showbackground = clkdisplays_doc[i]["bg"] | 1;
 		clockdisplays[i].autobrightness = clkdisplays_doc[i]["ab"] | 1;
 		clockdisplays[i].brightness = clkdisplays_doc[i]["bn"] | 128;
 		clockdisplays[i].backgroud_effect = clkdisplays_doc[i]["be"] | 0;
 	}
 
 	config.activeclockdisplay = config_doc["acd"] | 0;
+
+	if (clockdisplays[config.activeclockdisplay].showhours == 0)
+	{
+		array_state[0] = false; //set hours off
+	}
+	if (clockdisplays[config.activeclockdisplay].showminutes == 0)
+	{
+		array_state[1] = false; //set minutes off
+	}
+	if (clockdisplays[config.activeclockdisplay].showseconds == 0)
+	{
+		array_state[2] = false; //set seconds off
+	}
+	if (clockdisplays[config.activeclockdisplay].showhourmarks == 0)
+	{
+		array_state[3] = false; //set hourmarks off
+	}
+	if (clockdisplays[config.activeclockdisplay].showbackground == 0)
+	{
+		array_state[4] = false; //set background off
+	}
 
 	strlcpy(config.tz, config_doc["tz"] | "UTC", sizeof(config.tz));
 	strlcpy(config.ssid, config_doc["ssid"] | "", sizeof(config.ssid));
@@ -234,12 +237,11 @@ void setup()
 	FastLED.setMaxPowerInVoltsAndMilliamps(NEOPIXEL_VOLTAGE, NEOPIXEL_MILLIAMPS); //max 1 amp power usage
 
 	FastLED.addLeds<SK6812, DATA_PIN, GRB>(leds, NUM_LEDS) // GRB ordering is typical
-														   //													   .setCorrection(TypicalLEDStrip);
-		.setCorrection(0xFFFFFF);						   //No correction
+	//  .setCorrection(TypicalLEDStrip);
+		.setCorrection(0xFFFFFF); //No correction
 	FastLED.setMaxRefreshRate(0);
 
 	//MQTT
-	//
 	if (config.mqtttls == 1) //TLS enabled
 	{
 
@@ -263,7 +265,7 @@ void setup()
 
 	scanWifi(config.ssid);
 
-	if (rssi != -999) //connect to strongest ap
+	if (rssi != -999) //connect to strongest ap if multiple ap's with same ssid are found
 	{
 		WiFi.begin(config.ssid, config.wifipassword, channel);
 	}
@@ -277,9 +279,6 @@ void setup()
 		wifiConnected = true;
 		waitForSync();
 		MQTTconnect();
-
-		//WiFiClient httpclient;
-		//ESPhttpUpdate.update(httpclient, "192.168.178.100", 90, "/bin/firmware.bin");
 	}
 	else
 	{
@@ -377,10 +376,8 @@ void loop()
 	//Process Schedule every new minute
 	if (currentMinute != tz.minute()) //check if a minute has passed
 	{
-
 		currentMinute = tz.minute(); //set current minute
 
-		//	breakTime(tz.now(), tm);
 		for (int i = 0; i <= SCHEDULES - 1; i++)
 		{
 			if (tz.hour() == schedules[i].hour && tz.minute() == schedules[i].minute && schedules[i].active == 1)
@@ -390,7 +387,16 @@ void loop()
 		}
 	}
 
-	if (array_state[4] && display_state) //if background is on
+	if (array_state[4] && display_state) //Background on
+	{
+		clockdisplays[config.activeclockdisplay].showbackground = 1;
+	}
+	else //Background off
+	{
+		clockdisplays[config.activeclockdisplay].showbackground = 0;
+	}
+
+	if (clockdisplays[config.activeclockdisplay].showbackground == 1) //if background is on
 	{
 
 		if (clockdisplays[config.activeclockdisplay].backgroud_effect > 0) //show effect
@@ -415,10 +421,9 @@ void loop()
 				leds[rotate(Led)].fadeLightBy(brightness);
 			}
 		}
-		else
+		else //Set background color
 		{
-			//Set background color
-
+			
 			for (int Led = 0; Led < NUM_LEDS; Led = Led + 1)
 			{
 				leds[rotate(Led)] = clockdisplays[config.activeclockdisplay].backgroundColor;
@@ -433,33 +438,38 @@ void loop()
 		}
 	}
 
-	if (array_state[3] & display_state) // Hour marks
+	if (array_state[3] & display_state)
+	{
+		clockdisplays[config.activeclockdisplay].showhourmarks = 1;
+	}
+	else
+	{
+		clockdisplays[config.activeclockdisplay].showhourmarks = 0;
+	}
+
+	if (clockdisplays[config.activeclockdisplay].showhourmarks == 1) // Hour marks
 	{
 		for (int Led = 0; Led <= 55; Led = Led + 5)
 		{
 			leds[rotate(Led)] = clockdisplays[config.activeclockdisplay].hourMarkColor;
-			//leds[rotate(Led)].fadeToBlackBy(230);
 		}
 	}
 
-	if (array_state[0] && display_state) //Hour hand
+	if (array_state[0] & display_state)
 	{
-		//Hour hand
+		clockdisplays[config.activeclockdisplay].showhours = 1;
+	}
+	else
+	{
+		clockdisplays[config.activeclockdisplay].showhours = 0;
+	}
+
+	if (clockdisplays[config.activeclockdisplay].showhours == 1) //Hour hand
+	{	
 		int houroffset = map(tz.minute(), 0, 60, 0, 5); //move the hour hand when the minutes pass
 
 		uint8_t hrs12 = (tz.hour() % 12);
 		leds[rotate((hrs12 * 5) + houroffset)] = clockdisplays[config.activeclockdisplay].hourColor;
-
-		/* if (hrs12 == 0)
-	{
-		leds[rotate((hrs12 * 5) + houroffset) + 1] = clockdisplays[config.activeclockdisplay].hourColor;
-		leds[rotate(59)] = clockdisplays[config.activeclockdisplay].hourColor;
-	}
-	else
-	{
-		leds[rotate((hrs12 * 5) + houroffset) + 1] = clockdisplays[config.activeclockdisplay].hourColor;
-		leds[rotate((hrs12 * 5) + houroffset) - 1] = clockdisplays[config.activeclockdisplay].hourColor;
-	} */
 	}
 
 	if (array_state[1] && display_state) //Minute Hand
@@ -467,38 +477,20 @@ void loop()
 		leds[rotate(tz.minute())] = clockdisplays[config.activeclockdisplay].minuteColor;
 	}
 
-	if (array_state[2] && display_state) //mqtt seconds on
+	if (array_state[2] && display_state) //MQTT seconds on
 	{
 		clockdisplays[config.activeclockdisplay].showseconds = 1;
+		
 	}
-	else //mqtt seconds off
+	else //MQTT seconds off
 	{
 		clockdisplays[config.activeclockdisplay].showseconds = 0;
 	}
 
 	//Second hand
-	if (clockdisplays[config.activeclockdisplay].showseconds == 1 && display_state)
+	if (clockdisplays[config.activeclockdisplay].showseconds == 1)
 	{
-
-		/*
-		int msto255 = map(tz.ms(), 1, 999, 0, 255);
-		CRGB pixelColor1 = blend(clockdisplays[config.activeclockdisplay].secondColor, leds[rotate(tz.second() - 1)], msto255);
-		CRGB pixelColor2 = blend(leds[rotate(tz.second())], clockdisplays[config.activeclockdisplay].secondColor, msto255);
-
-		leds[rotate(tz.second())] = pixelColor2;
-		leds[rotate(tz.second() - 1)] = pixelColor1;
-*/
-		//normal
-
 		leds[rotate(tz.second())] = clockdisplays[config.activeclockdisplay].secondColor;
-	}
-
-	if (clockdisplays[config.activeclockdisplay].showms == 1)
-	{
-		int ms = map(tz.ms(), 1, 1000, 0, 59);
-
-		//leds[rotate(ms)] = config.secondColor;
-		leds[rotate(ms)] = clockdisplays[config.activeclockdisplay].secondColor;
 	}
 
 	// Set Brightness
@@ -515,8 +507,6 @@ void loop()
 			// read from the sensor:
 			readings[readIndex] = analogRead(LIGHTSENSORPIN);
 
-			//Serial.println(readings[readIndex]);
-
 			// add the reading to the total:
 			total = total + readings[readIndex];
 			// advance to the next position in the array:
@@ -532,8 +522,6 @@ void loop()
 			// calculate the average:
 			average = total / NUMREADINGS;
 
-			//Serial.println(average);
-
 			lux = average * 0.9765625; // 1000/1024
 
 			int brightnessMap = map(average, 3, 40, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
@@ -547,7 +535,6 @@ void loop()
 	else
 	{
 		sliderBrightnessValue = clockdisplays[config.activeclockdisplay].brightness;
-
 		int brightnessMap = map(sliderBrightnessValue, 0, 255, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
 		brightnessMap = constrain(brightnessMap, MIN_BRIGHTNESS, MAX_BRIGHTNESS);
 	}
@@ -557,12 +544,10 @@ void loop()
 		if (currentMillis - lastExecutedMillis_lightsensorMQTT >= EXE_INTERVAL_LIGHTSENSOR_MQTT)
 		{
 			lastExecutedMillis_lightsensorMQTT = currentMillis; // save the last executed time
-
 			publishSensorState();
 		}
 	}
 
-	//FastLED.show();
 	FastLED.delay(1000 / 400);
 
 	handleSerial();

@@ -31,16 +31,37 @@ String processor(const String &var)
     {
         return String(inttoHex(clockdisplays[config.activeclockdisplay].secondColor, 6));
     }
-    if (var == "showms")
+    if (var == "showseconds")
     {
-        if (clockdisplays[config.activeclockdisplay].showms != 0)
+        if (clockdisplays[config.activeclockdisplay].showseconds != 0)
         {
             return String("checked");
         }
     }
-    if (var == "showseconds")
+    if (var == "showminutes")
     {
-        if (clockdisplays[config.activeclockdisplay].showseconds != 0)
+        if (clockdisplays[config.activeclockdisplay].showminutes != 0)
+        {
+            return String("checked");
+        }
+    }
+    if (var == "showhours")
+    {
+        if (clockdisplays[config.activeclockdisplay].showhours != 0)
+        {
+            return String("checked");
+        }
+    }
+    if (var == "showhourmarks")
+    {
+        if (clockdisplays[config.activeclockdisplay].showhourmarks != 0)
+        {
+            return String("checked");
+        }
+    }
+        if (var == "showbackground")
+    {
+        if (clockdisplays[config.activeclockdisplay].showbackground != 0)
         {
             return String("checked");
         }
@@ -277,8 +298,11 @@ void handle_webpages()
                       data["hc"] = String(inttoHex(clockdisplays[i].hourColor, 6));
                       data["mc"] = String(inttoHex(clockdisplays[i].minuteColor, 6));
                       data["sc"] = String(inttoHex(clockdisplays[i].secondColor, 6));
-                      data["ms"] = clockdisplays[i].showms;
                       data["s"] = clockdisplays[i].showseconds;
+                      data["m"] = clockdisplays[i].showminutes;
+                      data["h"] = clockdisplays[i].showhours;
+                      data["bg"] = clockdisplays[i].showbackground;
+                      data["hm"] = clockdisplays[i].showhourmarks;
                       data["ab"] = clockdisplays[i].autobrightness;
                       data["bn"] = clockdisplays[i].brightness;
                       data["be"] = clockdisplays[i].backgroud_effect;
@@ -426,17 +450,79 @@ void handle_webpages()
                               FastLED.setBrightness(NumtToBrightness);
                           }
                       }
-                      else if (p->name() == "showms")
-                      {
-                          clockdisplays[config.activeclockdisplay].showms = p->value().toInt();
-                      }
                       else if (p->name() == "activeclockdisplay")
                       {
                           config.activeclockdisplay = p->value().toInt();
                       }
                       else if (p->name() == "showseconds")
                       {
-                          clockdisplays[config.activeclockdisplay].showseconds = p->value().toInt();
+
+                          if (p->value().toInt() == 1)
+                          {
+                              array_state[2] = true;
+                              publishState(2, MQTT_SECOND_STATE_TOPIC); //publish MQTT state topic
+                          }
+                          else if (p->value().toInt() == 0)
+                          {
+                              array_state[2] = false;
+                              publishState(2, MQTT_SECOND_STATE_TOPIC); //publish MQTT state topic
+                          }
+                      }
+                      else if (p->name() == "showminutes")
+                      {
+
+                          if (p->value().toInt() == 1)
+                          {
+                              array_state[1] = true;
+                              publishState(1, MQTT_MINUTE_STATE_TOPIC); //publish MQTT state topic
+                          }
+                          else if (p->value().toInt() == 0)
+                          {
+                              array_state[1] = false;
+                              publishState(1, MQTT_MINUTE_STATE_TOPIC); //publish MQTT state topic
+                          }
+                      }
+                      else if (p->name() == "showhours")
+                      {
+
+                          if (p->value().toInt() == 1)
+                          {
+                              array_state[0] = true;
+                              publishState(0, MQTT_HOUR_STATE_TOPIC); //publish MQTT state topic
+                          }
+                          else if (p->value().toInt() == 0)
+                          {
+                              array_state[0] = false;
+                              publishState(0, MQTT_HOUR_STATE_TOPIC); //publish MQTT state topic
+                          }
+                      }
+                      else if (p->name() == "showbackground")
+                      {
+
+                          if (p->value().toInt() == 1)
+                          {
+                              array_state[4] = true;
+                              publishState(4, MQTT_BACKGROUND_STATE_TOPIC); //publish MQTT state topic
+                          }
+                          else if (p->value().toInt() == 0)
+                          {
+                              array_state[4] = false;
+                              publishState(4, MQTT_BACKGROUND_STATE_TOPIC); //publish MQTT state topic
+                          }
+                      }
+                      else if (p->name() == "showhourmarks")
+                      {
+
+                          if (p->value().toInt() == 1)
+                          {
+                              array_state[3] = true;
+                              publishState(3, MQTT_HOURMARKS_STATE_TOPIC); //publish MQTT state topic
+                          }
+                          else if (p->value().toInt() == 0)
+                          {
+                              array_state[3] = false;
+                              publishState(3, MQTT_HOURMARKS_STATE_TOPIC); //publish MQTT state topic
+                          }
                       }
                       else if (p->name() == "autobrightness")
                       {

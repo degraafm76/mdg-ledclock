@@ -142,7 +142,7 @@ int cmd_hostname()
 	{ // set value
 		strcpy(config.hostname, args[1]);
 		Serial.println(config.hostname);
-		//saveConfiguration(JSON_CONFIG_FILE);
+		saveConfiguration(JSON_CONFIG_FILE);
 	}
 	return 1;
 }
@@ -160,7 +160,7 @@ int cmd_timezone()
 		strcpy(config.tz, args[1]);
 		Serial.println(config.tz);
 		tz.setLocation(config.tz);
-		//saveConfiguration(JSON_CONFIG_FILE);
+		saveConfiguration(JSON_CONFIG_FILE);
 	}
 	return 1;
 }
@@ -179,7 +179,7 @@ int cmd_mqtt()
 		{ // set value
 			strcpy(config.mqttserver, args[2]);
 			Serial.print(config.mqttserver);
-			//saveConfiguration(JSON_CONFIG_FILE);
+			saveConfiguration(JSON_CONFIG_FILE);
 		}
 	}
 	else if (strcmp(args[1], mqtt_args[1]) == 0)
@@ -196,7 +196,7 @@ int cmd_mqtt()
 
 				config.mqttport = atoi(args[2]);
 				Serial.print(config.mqttport);
-				//saveConfiguration(JSON_CONFIG_FILE);
+				saveConfiguration(JSON_CONFIG_FILE);
 			}
 			else
 			{
@@ -237,7 +237,7 @@ int cmd_mqtt()
 		{ // set value
 			strcpy(config.mqttuser, args[2]);
 			Serial.print(config.mqttuser);
-			//saveConfiguration(JSON_CONFIG_FILE);
+			saveConfiguration(JSON_CONFIG_FILE);
 		}
 	}
 	else if (strcmp(args[1], mqtt_args[4]) == 0)
@@ -251,7 +251,7 @@ int cmd_mqtt()
 		{ // set value
 			strcpy(config.mqttpassword, args[2]);
 			Serial.print(config.mqttpassword);
-			//saveConfiguration(JSON_CONFIG_FILE);
+			saveConfiguration(JSON_CONFIG_FILE);
 		}
 	}
 	else if (strcmp(args[1], mqtt_args[5]) == 0)
@@ -306,7 +306,7 @@ int cmd_wifi()
 			}
 
 			Serial.print(config.ssid);
-			//saveConfiguration(JSON_CONFIG_FILE);
+			saveConfiguration(JSON_CONFIG_FILE);
 		}
 	}
 	else if (strcmp(args[1], wifi_args[1]) == 0)
@@ -321,7 +321,7 @@ int cmd_wifi()
 		{ // set value
 			strcpy(config.wifipassword, args[2]);
 			Serial.print("********");
-			//saveConfiguration(JSON_CONFIG_FILE);
+			saveConfiguration(JSON_CONFIG_FILE);
 		}
 	}
 	else if (strcmp(args[1], wifi_args[2]) == 0)

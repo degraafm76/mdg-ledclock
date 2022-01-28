@@ -114,8 +114,11 @@ void saveClockDisplays(const char *filename)
 		obj["hc"] = clockdisplays[i].hourColor;
 		obj["mc"] = clockdisplays[i].minuteColor;
 		obj["sc"] = clockdisplays[i].secondColor;
-		obj["ms"] = clockdisplays[i].showms;
 		obj["s"] = clockdisplays[i].showseconds;
+		obj["m"] = clockdisplays[i].showminutes;
+		obj["h"] = clockdisplays[i].showhours;
+		obj["hm"] = clockdisplays[i].showhourmarks;
+		obj["bg"] = clockdisplays[i].showbackground;
 		obj["ab"] = clockdisplays[i].autobrightness;
 		obj["bn"] = clockdisplays[i].brightness;
 		obj["be"] = clockdisplays[i].backgroud_effect;
@@ -130,6 +133,3 @@ void saveClockDisplays(const char *filename)
 	// Close the file
 	configfile.close();
 }
-
-
-
