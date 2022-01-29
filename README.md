@@ -16,6 +16,8 @@ What are my options:
 * 330ohm Resistor
 * SK6812 LED ring 60 (https://www.tinytronics.nl/shop/nl/verlichting/ringen-en-modules/sk6812-digitale-5050-rgb-led-ring-60-leds-wit) or (https://nl.aliexpress.com/item/1005002090813354.html?gatewayAdapt=glo2nld&spm=a2g0o.9042311.0.0.27424c4dx34xlJ)
 
+The schematic can be found here > https://github.com/degraafm76/mdg-ledclock/blob/main/media/Led%20clock%20Schematic.png
+
 # Printing parts
 The parts are designed with PLA in mind. Nozzle width must be 0.4mm and layer hight 0.2mm. For the front ring and case supports on build plate are needed.
 
