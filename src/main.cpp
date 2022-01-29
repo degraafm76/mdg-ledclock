@@ -15,11 +15,6 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-
-//
-
-
-
 #include <Arduino.h>
 #include <helperfunctions.h>
 #include <ezTime.h> // using modified library in /lib (changed host to timezoned.mdg-design.nl)
