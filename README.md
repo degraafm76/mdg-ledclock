@@ -42,5 +42,5 @@ All configuration settings (wifi/mqtt/timezone) can be set with a serial connect
 # Update software
 There are 2 options to update the clock.
 
-1. Install Visual Studio code with platform.io and compile/upload the software to the clock
+1. Install Visual Studio code with platform.io and compile/upload the software to the clock. You can find the latest release here https://github.com/degraafm76/mdg-ledclock/releases
 2. Download the bin file from the latest release and flash the file to the clock with ESP home flasher https://github.com/esphome/esphome-flasher/releases
