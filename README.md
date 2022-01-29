@@ -24,7 +24,7 @@ The front ring must be printed in muliple colors. The first 3 layers white and t
 
 The models of this clock are licenced Attribution-NoDerivatives 4.0 International (CC BY-ND 4.0) 
 
-Please note the models can be used freely for personal use but may not be selled commercialy
+
 
 # Setup the clock
 See https://github.com/degraafm76/mdg-ledclock/blob/main/DOC/MDG%20-%20Ledclock%20(model%201).pdf
