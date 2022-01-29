@@ -4,8 +4,8 @@ An ESP8266 based LED clock which can be controlled by HTTP and MQTT.
 # Ok cool, I want one!
 What are my options:
 
-1. Buy a complete clock [Etsy: MDG Led clock model 1](https://www.etsy.com/nl/listing/986543633/mdg-led-klok-model-1?click_key=5fb5f2369c26019bcf23dcd2c4d61e6db163df13%3A986543633&click_sum=eb0c259e&ref=hp_opfy-5&frs=1).
-2. Source your own electronics and Buy 3D printed parts see ..
+1. Buy a complete clock [Etsy: MDG Led clock model 1](https://www.etsy.com/your/shops/MDGdesignNL/tools/listings/986543633).
+2. Source your own electronics and Buy 3D printed parts see [Etsy: MDG Led clock (model 1) - 3D printed parts](https://www.etsy.com/your/shops/MDGdesignNL/tools/listings/1155302644)
 3. Source your own electronics, 3D print the parts and build it yourself.
 
 
