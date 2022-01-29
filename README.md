@@ -30,7 +30,7 @@ See https://github.com/degraafm76/mdg-ledclock/blob/main/DOC/MDG%20-%20Ledclock%
 # Serial configuration
 All configuration settings (wifi/mqtt/timezone) can be set with a serial connection. Use 115200 baud
 
-
+![Serial Connection](https://github.com/degraafm76/mdg-ledclock/blob/main/media/Serial_connection.png)
 
 # Update software
 
