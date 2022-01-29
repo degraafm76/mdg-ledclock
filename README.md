@@ -5,9 +5,13 @@ Tested with Home Assistant but other domotica systems with MQTT support should w
 # Ok cool, I want one!
 What are my options:
 
-1. Buy a complete clock [Etsy: MDG Led clock model 1](https://www.etsy.com/your/shops/MDGdesignNL/tools/listings/986543633).
-2. Source your own electronics and Buy 3D printed parts see [Etsy: MDG Led clock (model 1) - 3D printed parts](https://www.etsy.com/your/shops/MDGdesignNL/tools/listings/1155302644)
+1. Buy a ready to use MDG ledclock [Etsy: MDG Led clock model 1](https://www.etsy.com/your/shops/MDGdesignNL/tools/listings/986543633).
+2. Source your own electronics and buy MDG ledclock 3D printed parts see [Etsy: MDG Led clock (model 1) - 3D printed parts](https://www.etsy.com/your/shops/MDGdesignNL/tools/listings/1155302644)
 3. Source your own electronics, 3D print the parts and build it yourself.
+
+If you like my work please consider donating to support my work.
+[![Donate](https://www.paypalobjects.com/en_US/NL/i/btn/btn_donateCC_LG.gif)]( https://www.paypal.com/donate/?hosted_button_id=ZDERFEHERXURW)
+
 
 # Electronic parts
 * 1 NodeMCU ESP8266 V2
