@@ -1,4 +1,4 @@
-# MDG Ledclock model1
+# MDG Ledclock model 1
 An ESP8266 based LED clock which can be controlled by HTTP and MQTT.
 
 # Ok cool, I want one!
