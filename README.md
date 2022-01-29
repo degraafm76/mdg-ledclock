@@ -22,7 +22,7 @@ The parts are designed with PLA in mind. Nozzle width must be 0.4mm and layer hi
 
 The front ring must be printed in muliple colors. The first 3 layers white and the rest of the layers black. If you don't know how to print multicolor objects with your printer I suggest you take a look at: https://www.youtube.com/watch?v=1nBnVtOEAiY
 
-The models of this clock are licenced [Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/legalcode) This license lets you distribute, remix, adapt, and build upon my work, even commercially, as long as you credit me for the original creation.
+The models of this clock are licenced [Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)](https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode) This license lets others remix, adapt, and build upon my work non-commercially, as long as you credit me and license their new creations under the identical terms.
 
 
 # Setup the clock
