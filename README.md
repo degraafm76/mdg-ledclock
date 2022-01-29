@@ -1,5 +1,5 @@
 # MDG Ledclock model1
-An ESP8266 based LED clock which can be controlled by HTTP and MQTT. 
+An ESP8266 based LED clock which can be controlled by HTTP and MQTT.
 
 # Ok cool, I want one!
 What are my options:
@@ -28,6 +28,8 @@ The front ring must be printed in muliple colors. The first 3 layers white and t
 See https://github.com/degraafm76/mdg-ledclock/blob/main/DOC/MDG%20-%20Ledclock%20(model%201).pdf
 
 # Serial configuration
+All configuration settings (wifi/mqtt/timezone) can be set with a serial connection. Use 115200 baud
+
 
 
 # Update software
