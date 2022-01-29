@@ -35,4 +35,4 @@ See https://github.com/degraafm76/mdg-ledclock/blob/main/DOC/MDG%20-%20Ledclock%
 There are 2 options to update the clock.
 
 1. Install Visual Studio code with platform.io and compile/upload the software to the clock
-2. Download the bin file from the latest release and flash the file to the clock with 
+2. Download the bin file from the latest release and flash the file to the clock with ESP home flasher https://github.com/esphome/esphome-flasher/releases
