@@ -31,7 +31,7 @@ If you like my work please consider donating to support my work.
 # Printing parts
 The parts are designed with PLA in mind. Nozzle width must be 0.4mm and layer hight 0.2mm. For the front ring and case supports on build plate are needed.
 
-The front ring must be printed in muliple colors. The first 3 layers (0.6mm) white and the rest of the layers black. If you don't know how to print multicolor objects with your printer I suggest you take a look at: https://www.youtube.com/watch?v=1nBnVtOEAiY
+The front ring must be printed in multiple colors. The first 3 layers (0.6mm) white and the rest of the layers black. If you don't know how to print multicolor objects with your printer I suggest you take a look at: https://www.youtube.com/watch?v=1nBnVtOEAiY
 
 The [models](https://github.com/degraafm76/mdg-ledclock/tree/main/STL) of this clock are licenced [Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)](https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode) This license lets others remix, adapt, and build upon my work non-commercially, as long as you credit me and license your new creations under the identical terms.
 
