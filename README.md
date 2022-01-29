@@ -21,6 +21,6 @@ The parts are designed with PLA in mind. Nozzle width must be 0.4mm and layer hi
 
 The front ring must be printed in muliple colors. The first 3 layers white and the rest of the layers black. If you don't know how to print multicolor objects with your printer I suggest you take a look at: https://www.youtube.com/watch?v=1nBnVtOEAiY
 
-# Configuration
+# Setup the clock
 
 See https://github.com/degraafm76/mdg-ledclock/blob/main/DOC/MDG%20-%20Ledclock%20(model%201).pdf
