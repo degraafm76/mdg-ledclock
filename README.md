@@ -1,5 +1,6 @@
 # MDG Ledclock model 1
 An ESP8266 based LED clock which can be controlled by HTTP and MQTT.
+Tested with Home Assistant but other domotica systems with MQTT support should work fine.
 
 # Ok cool, I want one!
 What are my options:
