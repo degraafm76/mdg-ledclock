@@ -26,3 +26,13 @@ The front ring must be printed in muliple colors. The first 3 layers white and t
 # Setup the clock
 
 See https://github.com/degraafm76/mdg-ledclock/blob/main/DOC/MDG%20-%20Ledclock%20(model%201).pdf
+
+# Serial configuration
+
+
+# Update software
+
+There are 2 options to update the clock with new software.
+
+1. Install Visual Studio code with platform.io and compile/upload the software to the clock
+2. Download the bin file from the latest release and update the clock with 
