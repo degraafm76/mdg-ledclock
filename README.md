@@ -3,7 +3,7 @@ An ESP8266 based LED clock which can be controlled by HTTP and MQTT.
 Tested with Home Assistant but other domotica systems with MQTT support should work fine.
 
 # Ok cool, I want one!
-What are my options:
+What are your options:
 
 1. Buy a ready to use MDG ledclock [Etsy: MDG Led clock model 1](https://www.etsy.com/your/shops/MDGdesignNL/tools/listings/986543633).
 2. Source your own electronics and buy MDG ledclock 3D printed parts see [Etsy: MDG Led clock (model 1) - 3D printed parts](https://www.etsy.com/your/shops/MDGdesignNL/tools/listings/1155302644)
