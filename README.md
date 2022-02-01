@@ -25,6 +25,7 @@ If you like my work please consider donating to support my work.
 * 1 1000uF Capacitor 24V
 * 1 330R 0.5W Resistor 
 * 1 SK6812 LED ring 60 (https://www.tinytronics.nl/shop/nl/verlichting/ringen-en-modules/sk6812-digitale-5050-rgb-led-ring-60-leds-wit) or (https://nl.aliexpress.com/item/1005002090813354.html?gatewayAdapt=glo2nld&spm=a2g0o.9042311.0.0.27424c4dx34xlJ)
+* 1 USB 5V adapter minimum 1A
 
 ![Schematic](https://github.com/degraafm76/mdg-ledclock/blob/main/media/Led%20clock%20Schematic.png)
 
