@@ -28,6 +28,8 @@ If you like my work please consider donating to support my work.
 * 1 USB 5V adapter minimum 1A
 
 ![Schematic](https://github.com/degraafm76/mdg-ledclock/blob/main/media/Led%20clock%20Schematic.png)
+![Suggested wiring](https://github.com/degraafm76/mdg-ledclock/blob/main/media/Led%20Clock%20Electronics.jpg)
+
 
 # Printing parts
 The parts are designed with PLA in mind. Nozzle width must be 0.4mm and layer hight 0.2mm. For the front ring and case supports on build plate are needed.
