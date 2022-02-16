@@ -318,8 +318,20 @@ int cmd_wifi()
 			Serial.print(config.wifipassword);
 		}
 		else
-		{ // set value
+		{ // set value		
+			
 			strcpy(config.wifipassword, args[2]);
+			for (int i = 3; i < MAX_NUM_ARGS; i++)
+			{
+				if (strlen(args[i]) != 0) //when there are spaces in ssid
+				{
+					strcat(config.wifipassword, " ");
+					strcat(config.wifipassword, args[i]);
+				}
+			}
+
+
+			
 			Serial.print("********");
 			saveConfiguration(JSON_CONFIG_FILE);
 		}
