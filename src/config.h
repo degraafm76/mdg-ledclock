@@ -7,7 +7,7 @@
 #define ROTATE_LEDS 30                      // Rotate leds by this number. Led ring is connected upside down
 #define MAX_BRIGHTNESS 255                  // Max brightness
 #define MIN_BRIGHTNESS 8                    // Min brightness (at very low brightness levels interpolating doesn't work well and the led's will flicker and not display the correct color)
-#define DATA_PIN 3                          // Neopixel data pin
+#define DATA_PIN 4                          // Neopixel data pin (use pin 4 for WLED compatibility)
 #define NEOPIXEL_VOLTAGE 5                  // Neopixel voltage
 #define NEOPIXEL_MILLIAMPS 1000             // Neopixel maximum current usage in milliamps, if you have a powersource higher then 1A you can change this value (at your own risk!) to have brighter leds.
 #define LIGHTSENSORPIN A0                   // Ambient light sensor pin
