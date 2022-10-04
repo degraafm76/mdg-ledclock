@@ -218,7 +218,7 @@ int cmd_mqtt()
 			{
 				config.mqtttls = atoi(args[2]);
 				Serial.print(config.mqtttls);
-				//saveConfiguration(JSON_CONFIG_FILE);
+				saveConfiguration(JSON_CONFIG_FILE);
 			}
 			else
 			{
