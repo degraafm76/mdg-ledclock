@@ -4,8 +4,10 @@
 ![MDG Ledclock](https://github.com/degraafm76/mdg-ledclock/blob/main/media/ledclock2.jpg)
 ![MDG Ledclock](https://github.com/degraafm76/mdg-ledclock/blob/main/media/ledclock3.jpg)
 
-An ESP8266 based LED clock which can be controlled by HTTP and MQTT. The Hardware is also comapatible with the WLED project > https://kno.wled.ge/
+An ESP8266 based LED clock which can be controlled by HTTP and MQTT. 
 Tested with Home Assistant but other domotica systems with MQTT support should work fine.
+
+The Hardware is also compatible with the WLED project see > https://kno.wled.ge/
 
 # Ok cool, I want one!
 What are your options:
