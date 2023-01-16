@@ -289,11 +289,20 @@ void setup()
 
 	apPassword = String(mac[5], HEX) + String(mac[4], HEX) + String(mac[3], HEX) + String(mac[2] + mac[5], HEX);
 
+	while (apPassword.length() < 8) {
+		
+		apPassword = apPassword + "0"; //Add zero's to AP password to make sure the wifi password is always 8 characters
+	}
+
 	if (wifiConnected == false)
 	{
-
+		Serial.println("");
+		Serial.print("Setting soft-AP ... ");
+  		Serial.println(WiFi.softAP(AP_NAME, apPassword) ? "Ready" : "Failed!");
+		Serial.println("");
 		WiFi.mode(WIFI_AP); //Accespoint mode
-		WiFi.softAP(AP_NAME, apPassword);
+		
+
 	}
 
 	// Provide official timezone names
