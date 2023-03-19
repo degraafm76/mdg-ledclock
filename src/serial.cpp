@@ -20,7 +20,6 @@ void printInfo()
 	Serial.println(SOFTWARE_VERSION);
 	Serial.print("MAC address: ");
 	Serial.println(WiFi.macAddress());
-	Serial.println("AP Password: " + apPassword);
 	Serial.print("Hostname: ");
 	Serial.println(config.hostname);
 	Serial.println("SSID: " + WiFi.SSID());

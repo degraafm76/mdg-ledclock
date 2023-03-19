@@ -1,18 +1,18 @@
 /*  MDG Ledclock
-    Copyright (C) 2022  M. de Graaf
+	Copyright (C) 2022  M. de Graaf
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+	This program is free software: you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+	You should have received a copy of the GNU General Public License
+	along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <Arduino.h>
@@ -44,7 +44,7 @@ void scanWifi(String ssid)
 	for (int thisNet = 0; thisNet < numSsid; thisNet++)
 	{
 		if (WiFi.SSID(thisNet) == ssid)
-		{		
+		{
 			if (WiFi.RSSI(thisNet) > rssi)
 			{
 				memcpy(bssid, WiFi.BSSID(thisNet), 6);
@@ -83,8 +83,6 @@ boolean checkConnection()
 	return false;
 }
 
-
-
 void setup()
 {
 
@@ -106,7 +104,7 @@ void setup()
 	// Initialize LittleFS
 	if (!LittleFS.begin())
 	{
-		//Serial.println("An Error has occurred while mounting LittleFS");
+		// Serial.println("An Error has occurred while mounting LittleFS");
 		return;
 	}
 
@@ -114,7 +112,7 @@ void setup()
 	File configfile = LittleFS.open(JSON_CONFIG_FILE, "r");
 	if (!configfile)
 	{
-		//Serial.println("Config file open failed");
+		// Serial.println("Config file open failed");
 	}
 	// Allocate a temporary JsonDocument
 	// Don't forget to change the capacity to match your requirements.
@@ -126,15 +124,15 @@ void setup()
 	// Deserialize the JSON document
 	DeserializationError error_config = deserializeJson(config_doc, jsonConfigfile);
 	if (error_config)
-		//Serial.println(F("Failed to read config.json file, using default configuration"));
+		// Serial.println(F("Failed to read config.json file, using default configuration"));
 
-		configfile.close(); //close file
+		configfile.close(); // close file
 
 	///// Schedule file /////
 	File schedulefile = LittleFS.open(JSON_SCHEDULES_FILE, "r");
 	if (!schedulefile)
 	{
-		//Serial.println("Schedule file open failed");
+		// Serial.println("Schedule file open failed");
 	}
 	// Allocate a temporary JsonDocument
 	// Don't forget to change the capacity to match your requirements.
@@ -147,9 +145,9 @@ void setup()
 	// Deserialize the JSON document
 	DeserializationError error_schedule = deserializeJson(schedule_doc, jsonSchedulefile);
 	if (error_schedule)
-		//Serial.println(F("Failed to read schedule.json file, using default configuration"));
+		// Serial.println(F("Failed to read schedule.json file, using default configuration"));
 
-		schedulefile.close(); //close file
+		schedulefile.close(); // close file
 
 	for (int i = 0; i <= SCHEDULES - 1; i++)
 	{
@@ -164,7 +162,7 @@ void setup()
 
 	if (!clkdisplaysfile)
 	{
-		//Serial.println("Clock display file open failed");
+		// Serial.println("Clock display file open failed");
 	}
 
 	// Allocate a temporary JsonDocument
@@ -177,9 +175,9 @@ void setup()
 	// Deserialize the JSON document
 	DeserializationError error_clkdisplays = deserializeJson(clkdisplays_doc, jsonClkdisplaysfile);
 	if (error_clkdisplays)
-		//Serial.println(F("Failed to read file clkdisplays.json, using default configuration"));
+		// Serial.println(F("Failed to read file clkdisplays.json, using default configuration"));
 
-		clkdisplaysfile.close(); //close file
+		clkdisplaysfile.close(); // close file
 
 	for (int i = 0; i <= CLOCK_DISPLAYS - 1; i++)
 	{
@@ -202,23 +200,23 @@ void setup()
 
 	if (clockdisplays[config.activeclockdisplay].showhours == 0)
 	{
-		array_state[0] = false; //set hours off
+		array_state[0] = false; // set hours off
 	}
 	if (clockdisplays[config.activeclockdisplay].showminutes == 0)
 	{
-		array_state[1] = false; //set minutes off
+		array_state[1] = false; // set minutes off
 	}
 	if (clockdisplays[config.activeclockdisplay].showseconds == 0)
 	{
-		array_state[2] = false; //set seconds off
+		array_state[2] = false; // set seconds off
 	}
 	if (clockdisplays[config.activeclockdisplay].showhourmarks == 0)
 	{
-		array_state[3] = false; //set hourmarks off
+		array_state[3] = false; // set hourmarks off
 	}
 	if (clockdisplays[config.activeclockdisplay].showbackground == 0)
 	{
-		array_state[4] = false; //set background off
+		array_state[4] = false; // set background off
 	}
 
 	strlcpy(config.tz, config_doc["tz"] | "UTC", sizeof(config.tz));
@@ -232,22 +230,22 @@ void setup()
 	config.mqtttls = config_doc["mt"] | 0;
 
 	FastLED.setBrightness(128);
-	FastLED.setMaxPowerInVoltsAndMilliamps(NEOPIXEL_VOLTAGE, NEOPIXEL_MILLIAMPS); //max 1 amp power usage
+	FastLED.setMaxPowerInVoltsAndMilliamps(NEOPIXEL_VOLTAGE, NEOPIXEL_MILLIAMPS); // max 1 amp power usage
 
 	FastLED.addLeds<SK6812, DATA_PIN, GRB>(leds, NUM_LEDS) // GRB ordering is typical
-	//  .setCorrection(TypicalLEDStrip);
-		.setCorrection(0xFFFFFF); //No correction
+														   //  .setCorrection(TypicalLEDStrip);
+		.setCorrection(0xFFFFFF);						   // No correction
 	FastLED.setMaxRefreshRate(0);
 
-	//MQTT
-	if (config.mqtttls == 1) //TLS enabled
+	// MQTT
+	if (config.mqtttls == 1) // TLS enabled
 	{
 
 		TLSClient.setInsecure();
 		mqttClient.setClient(TLSClient);
 		mqttClient.setSocketTimeout(1);
 	}
-	else //TLS disabled
+	else // TLS disabled
 	{
 		mqttClient.setClient(espClient);
 	}
@@ -256,14 +254,14 @@ void setup()
 	mqttClient.setCallback(callback);
 	mqttClient.setSocketTimeout(1);
 
-	//WIFI
+	// WIFI
 	WiFi.mode(WIFI_STA);
 
 	WiFi.hostname(config.hostname);
 
 	scanWifi(config.ssid);
 
-	if (rssi != -999) //connect to strongest ap if multiple ap's with same ssid are found
+	if (rssi != -999) // connect to strongest ap if multiple ap's with same ssid are found
 	{
 		WiFi.begin(config.ssid, config.wifipassword, channel);
 	}
@@ -283,26 +281,13 @@ void setup()
 		wifiConnected = false;
 	}
 
-	byte mac[6];
-
-	WiFi.macAddress(mac);
-
-	apPassword = String(mac[5], HEX) + String(mac[4], HEX) + String(mac[3], HEX) + String(mac[2] + mac[5], HEX);
-
-	while (apPassword.length() < 8) {
-		
-		apPassword = apPassword + "0"; //Add zero's to AP password to make sure the wifi password is always 8 characters
-	}
-
 	if (wifiConnected == false)
 	{
 		Serial.println("");
 		Serial.print("Setting soft-AP ... ");
-  		Serial.println(WiFi.softAP(AP_NAME, apPassword) ? "Ready" : "Failed!");
+		Serial.println(WiFi.softAP(AP_NAME) ? "Ready" : "Failed!");
 		Serial.println("");
-		WiFi.mode(WIFI_AP); //Accespoint mode
-		
-
+		WiFi.mode(WIFI_AP); // Accespoint mode
 	}
 
 	// Provide official timezone names
@@ -315,7 +300,7 @@ void setup()
 
 	if (config.mqtttls == 1 && MQTTConnected)
 	{
-		//do not start webserver when MQTT is connected with TLS because of low memory and crashes
+		// do not start webserver when MQTT is connected with TLS because of low memory and crashes
 		Serial.println("Info: Webserver is disabled because MQTT TLS is enabled");
 	}
 	else
@@ -324,7 +309,7 @@ void setup()
 		server.begin();
 	}
 
-	//Multicast DNS
+	// Multicast DNS
 	if (!MDNS.begin(config.hostname))
 	{ // Start the mDNS responder for esp8266.local
 		Serial.println("Error setting up MDNS responder!");
@@ -332,7 +317,7 @@ void setup()
 
 	MDNS.addService("http", "tcp", 80);
 
-	//printInfo();
+	// printInfo();
 	Serial.println("Type help for information");
 	Serial.print(">");
 }
@@ -380,10 +365,10 @@ void loop()
 
 	MDNS.update();
 
-	//Process Schedule every new minute
-	if (currentMinute != tz.minute()) //check if a minute has passed
+	// Process Schedule every new minute
+	if (currentMinute != tz.minute()) // check if a minute has passed
 	{
-		currentMinute = tz.minute(); //set current minute
+		currentMinute = tz.minute(); // set current minute
 
 		for (int i = 0; i <= SCHEDULES - 1; i++)
 		{
@@ -394,19 +379,19 @@ void loop()
 		}
 	}
 
-	if (array_state[4] && display_state) //Background on
+	if (array_state[4] && display_state) // Background on
 	{
 		clockdisplays[config.activeclockdisplay].showbackground = 1;
 	}
-	else //Background off
+	else // Background off
 	{
 		clockdisplays[config.activeclockdisplay].showbackground = 0;
 	}
 
-	if (clockdisplays[config.activeclockdisplay].showbackground == 1) //if background is on
+	if (clockdisplays[config.activeclockdisplay].showbackground == 1) // if background is on
 	{
 
-		if (clockdisplays[config.activeclockdisplay].backgroud_effect > 0) //show effect
+		if (clockdisplays[config.activeclockdisplay].backgroud_effect > 0) // show effect
 		{
 			EVERY_N_MILLISECONDS(20) { gHue++; }
 
@@ -428,16 +413,16 @@ void loop()
 				leds[rotate(Led)].fadeLightBy(brightness);
 			}
 		}
-		else //Set background color
+		else // Set background color
 		{
-			
+
 			for (int Led = 0; Led < NUM_LEDS; Led = Led + 1)
 			{
 				leds[rotate(Led)] = clockdisplays[config.activeclockdisplay].backgroundColor;
 			}
 		}
 	}
-	else //if background is off
+	else // if background is off
 	{
 		for (int Led = 0; Led < 60; Led = Led + 1)
 		{
@@ -471,30 +456,29 @@ void loop()
 		clockdisplays[config.activeclockdisplay].showhours = 0;
 	}
 
-	if (clockdisplays[config.activeclockdisplay].showhours == 1) //Hour hand
-	{	
-		int houroffset = map(tz.minute(), 0, 60, 0, 5); //move the hour hand when the minutes pass
+	if (clockdisplays[config.activeclockdisplay].showhours == 1) // Hour hand
+	{
+		int houroffset = map(tz.minute(), 0, 60, 0, 5); // move the hour hand when the minutes pass
 
 		uint8_t hrs12 = (tz.hour() % 12);
 		leds[rotate((hrs12 * 5) + houroffset)] = clockdisplays[config.activeclockdisplay].hourColor;
 	}
 
-	if (array_state[1] && display_state) //Minute Hand
+	if (array_state[1] && display_state) // Minute Hand
 	{
 		leds[rotate(tz.minute())] = clockdisplays[config.activeclockdisplay].minuteColor;
 	}
 
-	if (array_state[2] && display_state) //MQTT seconds on
+	if (array_state[2] && display_state) // MQTT seconds on
 	{
 		clockdisplays[config.activeclockdisplay].showseconds = 1;
-		
 	}
-	else //MQTT seconds off
+	else // MQTT seconds off
 	{
 		clockdisplays[config.activeclockdisplay].showseconds = 0;
 	}
 
-	//Second hand
+	// Second hand
 	if (clockdisplays[config.activeclockdisplay].showseconds == 1)
 	{
 		leds[rotate(tz.second())] = clockdisplays[config.activeclockdisplay].secondColor;
@@ -503,7 +487,7 @@ void loop()
 	// Set Brightness
 	if (clockdisplays[config.activeclockdisplay].autobrightness == 1)
 	{
-		//Set brightness when auto brightness is active
+		// Set brightness when auto brightness is active
 		if (currentMillis - lastExecutedMillis_brightness >= EXE_INTERVAL_AUTO_BRIGHTNESS)
 		{
 			lastExecutedMillis_brightness = currentMillis; // save the last executed time

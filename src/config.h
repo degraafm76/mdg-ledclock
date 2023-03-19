@@ -1,7 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define SOFTWARE_VERSION "1.2.0"            // Software version
+#define SOFTWARE_VERSION "1.2.1"            // Software version
 #define CLOCK_MODEL "MDG Ledclock model 1"  // Clock Model
 #define NUM_LEDS 60                         // How many leds are in the clock?
 #define ROTATE_LEDS 30                      // Rotate leds by this number. Led ring is connected upside down
